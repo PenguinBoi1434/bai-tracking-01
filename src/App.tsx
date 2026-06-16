@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useAuthenticator } from "@aws-amplify/ui-react";
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../amplify/data/resource";
 import MapPicker from "./MapPicker";
@@ -26,6 +27,7 @@ const emptyForm: PointFormData = {
 };
 
 function App() {
+  const { user, signOut } = useAuthenticator((context) => [context.user]);
   const [points, setPoints] = useState<Schema["Point"]["type"][]>([]);
   const [form, setForm] = useState<PointFormData>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -110,6 +112,12 @@ function App() {
     <div className="app">
       <header className="header">
         <h1>📍 Point Tracker</h1>
+        <div className="header-user">
+          <span className="header-email">{user?.signInDetails?.loginId}</span>
+          <button className="btn btn-secondary btn-small" onClick={signOut}>
+            Sign out
+          </button>
+        </div>
       </header>
 
       <main className="main">
