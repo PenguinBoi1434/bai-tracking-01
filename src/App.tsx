@@ -84,11 +84,11 @@ function App() {
     setEditingId(point.id);
     setForm({
       date: point.date,
-      time: point.time,
-      location: point.location,
+      time: point.time ?? "",
+      location: point.location ?? "",
       lng: String(point.lng),
       lat: String(point.lat),
-      description: point.description,
+      description: point.description ?? "",
     });
   }
 

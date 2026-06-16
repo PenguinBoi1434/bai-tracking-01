@@ -15,7 +15,7 @@ export interface PointMarker {
   id: string;
   lat: number;
   lng: number;
-  location: string;
+  location: string | null | undefined;
 }
 
 interface MapPickerProps {
@@ -106,7 +106,7 @@ export default function MapPicker({ lat, lng, points, onCoordChange }: MapPicker
             <AdvancedMarker key={p.id} position={{ lat: p.lat, lng: p.lng }}>
               <div
                 className="map-marker-circle"
-                title={p.location}
+                title={p.location ?? ""}
                 style={{
                   width: savedSize,
                   height: savedSize,
