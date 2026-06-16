@@ -1,0 +1,39 @@
+.auth-brand-header {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 1rem 0.5rem;
+}
+
+.auth-brand-logo {
+  max-width: 260px;
+  width: 100%;
+  height: auto;
+}
+
+.auth-brand-footer {
+  text-align: center;
+  padding: 1rem 1rem 1.5rem;
+  font-size: 0.85rem;
+  color: #555;
+  line-height: 1.5;
+}
+
+.auth-brand-name {
+  font-weight: 600;
+  color: #8e1a8e;
+  margin-bottom: 0.25rem;
+}
+
+.auth-brand-footer a {
+  color: #8e1a8e;
+  text-decoration: none;
+}
+
+.auth-brand-footer a:hover {
+  text-decoration: underline;
+}
+
+.auth-brand-address {
+  margin-top: 0.5rem;
+  color: #777;
+}
