@@ -4,11 +4,11 @@ const schema = a.schema({
   Point: a
     .model({
       date: a.string().required(),
-      time: a.string().required(),
-      location: a.string().required(),
+      time: a.string(),
+      location: a.string(),
       lng: a.float().required(),
       lat: a.float().required(),
-      description: a.string().required(),
+      description: a.string(),
     })
     .authorization((allow) => [allow.publicApiKey()]),
 });

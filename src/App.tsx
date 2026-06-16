@@ -151,33 +151,6 @@ function App() {
               />
             </label>
 
-            <div className="form-row">
-              <label>
-                Longitude
-                <input
-                  name="lng"
-                  type="number"
-                  step="any"
-                  placeholder="-73.9654"
-                  value={form.lng}
-                  onChange={handleChange}
-                  required
-                />
-              </label>
-              <label>
-                Latitude
-                <input
-                  name="lat"
-                  type="number"
-                  step="any"
-                  placeholder="40.7829"
-                  value={form.lat}
-                  onChange={handleChange}
-                  required
-                />
-              </label>
-            </div>
-
             <label>
               Description
               <textarea
