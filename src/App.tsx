@@ -14,6 +14,12 @@ function isVideoKey(key: string): boolean {
   return VIDEO_RE.test(key);
 }
 
+/** Recover the original filename from a stored key like ".../<ts>-<i>-<name>". */
+function filenameFromKey(key: string): string {
+  const last = key.split("/").pop() ?? "download";
+  return last.replace(/^\d+-(\d+-)?/, "");
+}
+
 interface PointFormData {
   date: string;
   time: string;
@@ -132,6 +138,63 @@ function App() {
     setLightboxIndex((cur) =>
       cur === null ? null : (cur + 1) % detailPhotos.length
     );
+  }
+
+  async function handleDownload() {
+    if (lightboxIndex === null) return;
+    const key = detailPhotos[lightboxIndex];
+    const url = photoUrls[key];
+    if (!url) return;
+    setBusy(true);
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const suggestedName = filenameFromKey(key);
+
+      // Preferred: native "Save As" dialog so the user picks name + location
+      // (Chromium browsers). Falls through to a normal download otherwise.
+      const picker = (
+        window as unknown as {
+          showSaveFilePicker?: (opts?: {
+            suggestedName?: string;
+          }) => Promise<{
+            createWritable: () => Promise<{
+              write: (data: Blob) => Promise<void>;
+              close: () => Promise<void>;
+            }>;
+          }>;
+        }
+      ).showSaveFilePicker;
+
+      if (picker) {
+        try {
+          const handle = await picker({ suggestedName });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          return;
+        } catch (err) {
+          if ((err as DOMException)?.name === "AbortError") return; // user cancelled
+          console.warn("Save picker failed, falling back to download:", err);
+        }
+      }
+
+      // Fallback: triggers a normal download to the browser's default location.
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.download = suggestedName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objUrl);
+    } catch (err) {
+      // Last resort: open the file in a new tab if a direct download fails.
+      console.error("Download failed, opening in new tab:", err);
+      window.open(url, "_blank", "noopener");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleLightboxDelete() {
@@ -631,6 +694,13 @@ function App() {
               <span className="lightbox-counter">
                 {lightboxIndex + 1} / {detailPhotos.length}
               </span>
+              <button
+                className="btn btn-secondary"
+                onClick={handleDownload}
+                disabled={busy}
+              >
+                Download
+              </button>
               <button
                 className="btn btn-delete"
                 onClick={handleLightboxDelete}
