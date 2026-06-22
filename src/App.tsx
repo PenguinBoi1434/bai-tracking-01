@@ -364,7 +364,10 @@ function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>📍 Point Tracker</h1>
+        <div className="header-left">
+          <img src="/bai-engineers-logo.png" alt="Bai Engineers" className="header-logo" />
+          <h1>Point Tracker</h1>
+        </div>
         <div className="header-user">
           <span className="header-email">{user?.signInDetails?.loginId}</span>
           <button className="btn btn-secondary btn-small" onClick={signOut}>
