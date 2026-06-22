@@ -9,7 +9,7 @@ export const authComponents = {
     return (
       <div className="auth-brand-header">
         <img
-          src="/bai-engineers-logo.png"
+          src="/app-display-logo.png"
           alt="Bai Engineers"
           className="auth-brand-logo"
           onError={(e) => {

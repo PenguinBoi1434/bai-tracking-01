@@ -365,7 +365,7 @@ function App() {
     <div className="app">
       <header className="header">
         <div className="header-left">
-          <img src="/bai-engineers-logo.png" alt="Bai Engineers" className="header-logo" />
+          <img src="/app-display-logo.png" alt="Bai Engineers" className="header-logo" />
           <h1>Point Tracker</h1>
         </div>
         <div className="header-user">
