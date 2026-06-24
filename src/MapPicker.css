@@ -27,6 +27,33 @@
   font-size: 0.85rem;
 }
 
+/* ── Locate button ── */
+.map-locate-btn {
+  position: absolute;
+  bottom: 2.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: 0.5rem 1.1rem;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1b6ca8;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.map-locate-btn:hover {
+  background: #f0f7ff;
+}
+
+.map-locate-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 /* ── Circle markers ── */
 /* Invisible, larger hit area so the tiny circle is easy to click. */
 .map-marker-hit {

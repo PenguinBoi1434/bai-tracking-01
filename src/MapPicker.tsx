@@ -51,6 +51,33 @@ function markerSize(zoom: number): number {
   return Math.max(1, Math.min(20, size));   // 2px at default zoom (clamp 1px–20px)
 }
 
+function LocateButton() {
+  const map = useMap();
+  const [busy, setBusy] = useState(false);
+
+  function handleLocate() {
+    if (!map) return;
+    setBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        map.panTo({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        map.setZoom(18);
+        setBusy(false);
+      },
+      () => {
+        alert("Could not get your location.");
+        setBusy(false);
+      }
+    );
+  }
+
+  return (
+    <button className="map-locate-btn" onClick={handleLocate} disabled={busy} title="Go to my location">
+      {busy ? "…" : "⊕ My Location"}
+    </button>
+  );
+}
+
 export default function MapPicker({ lat, lng, points, onCoordChange, onPointSelect, focusTarget }: MapPickerProps) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 
@@ -117,12 +144,14 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onPointSele
           mapId="point-tracker-map"
           defaultCenter={initialCenter}
           defaultZoom={DEFAULT_ZOOM}
+          mapTypeId="satellite"
           gestureHandling="greedy"
           disableDefaultUI={false}
           onClick={handleMapClick}
           onCameraChanged={handleCameraChange}
         >
           <MapFocuser target={focusTarget ?? null} />
+          <LocateButton />
           {points.map((p) => (
             <AdvancedMarker
               key={p.id}

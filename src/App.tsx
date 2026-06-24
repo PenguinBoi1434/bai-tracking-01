@@ -9,6 +9,30 @@ import "./App.css";
 
 const client = generateClient<Schema>();
 
+const MST_TZ = "America/Denver";
+const VIEWER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+function formatTimeDisplay(date: string, time: string, creatorTz: string | null | undefined): string {
+  if (!time) return "";
+  const tz = creatorTz || MST_TZ;
+  const dt = new Date(`${date}T${time}`);
+
+  const fmt = (tz: string) =>
+    new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: tz,
+    }).format(dt);
+
+  const viewerTime = fmt(VIEWER_TZ);
+
+  if (VIEWER_TZ === MST_TZ) return viewerTime;
+
+  const mstTime = fmt(MST_TZ);
+  return `${viewerTime} (${mstTime} MT)`;
+}
+
 const VIDEO_RE = /\.(mp4|mov|webm|avi|mkv|m4v|ogv)$/i;
 function isVideoKey(key: string): boolean {
   return VIDEO_RE.test(key);
@@ -346,6 +370,7 @@ function App() {
       lng,
       lat,
       description: form.description,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
 
     if (editingId) {
@@ -369,6 +394,7 @@ function App() {
       lat: String(point.lat),
       description: point.description ?? "",
     });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleDelete(id: string) {
@@ -486,13 +512,13 @@ function App() {
                 <div key={p.id} className="point-card">
                   <div className="point-card-header">
                     <span className="point-date">{p.date}</span>
-                    <span className="point-time">{p.time}</span>
+                    <span className="point-time">{formatTimeDisplay(p.date, p.time ?? "", p.timezone)}</span>
                   </div>
                   <h3>{p.location}</h3>
                   <p className="point-desc">{p.description}</p>
                   <div className="point-card-actions">
                     <button className="btn btn-small btn-zoom" onClick={() => zoomToPoint(p)}>
-                      Zoom
+                      Locate me
                     </button>
                     <button className="btn btn-small btn-edit" onClick={() => handleEdit(p)}>
                       Edit
