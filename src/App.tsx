@@ -12,9 +12,8 @@ const client = generateClient<Schema>();
 const MST_TZ = "America/Denver";
 const VIEWER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-function formatTimeDisplay(date: string, time: string, creatorTz: string | null | undefined): string {
+function formatTimeDisplay(date: string, time: string, _creatorTz?: string | null): string {
   if (!time) return "";
-  const tz = creatorTz || MST_TZ;
   const dt = new Date(`${date}T${time}`);
 
   const fmt = (tz: string) =>
