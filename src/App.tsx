@@ -315,12 +315,36 @@ function App() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
+    let lat = parseFloat(form.lat);
+    let lng = parseFloat(form.lng);
+
+    if (!form.lat || !form.lng || isNaN(lat) || isNaN(lng)) {
+      const useGPS = window.confirm(
+        "No location set on the map. Use your current GPS location?"
+      );
+      if (useGPS) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+            navigator.geolocation.getCurrentPosition(resolve, reject)
+          );
+          lat = pos.coords.latitude;
+          lng = pos.coords.longitude;
+          setForm((prev) => ({ ...prev, lat: String(lat), lng: String(lng) }));
+        } catch {
+          alert("Could not get your location. Please click the map to set a point.");
+          return;
+        }
+      } else {
+        return;
+      }
+    }
+
     const payload = {
       date: form.date,
       time: form.time,
       location: form.location,
-      lng: parseFloat(form.lng),
-      lat: parseFloat(form.lat),
+      lng,
+      lat,
       description: form.description,
     };
 
