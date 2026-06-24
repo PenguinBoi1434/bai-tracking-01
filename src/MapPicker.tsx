@@ -3,6 +3,8 @@ import {
   APIProvider,
   Map,
   AdvancedMarker,
+  MapControl,
+  ControlPosition,
   useMap,
   MapCameraChangedEvent,
   MapMouseEvent,
@@ -41,6 +43,7 @@ interface MapPickerProps {
   lng: string;
   points: PointMarker[];
   onCoordChange: (lat: string, lng: string) => void;
+  onMarkerCancel?: () => void;
   onPointSelect?: (id: string) => void;
   focusTarget?: FocusTarget | null;
 }
@@ -72,13 +75,21 @@ function LocateButton() {
   }
 
   return (
-    <button className="map-locate-btn" onClick={handleLocate} disabled={busy} title="Go to my location">
-      {busy ? "…" : "⊕ My Location"}
-    </button>
+    <MapControl position={ControlPosition.RIGHT_BOTTOM}>
+      <button className="map-locate-btn" onClick={handleLocate} disabled={busy} title="My location">
+        {busy ? (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#1a73e8"><circle cx="12" cy="12" r="4"/></svg>
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#1a73e8" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
+          </svg>
+        )}
+      </button>
+    </MapControl>
   );
 }
 
-export default function MapPicker({ lat, lng, points, onCoordChange, onPointSelect, focusTarget }: MapPickerProps) {
+export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCancel, onPointSelect, focusTarget }: MapPickerProps) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
@@ -109,7 +120,6 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onPointSele
   );
 
   const savedSize = markerSize(zoom);
-  const draftSize = savedSize * 1.2;
 
   const draftVisible = useMemo(
     () =>
@@ -152,6 +162,7 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onPointSele
         >
           <MapFocuser target={focusTarget ?? null} />
           <LocateButton />
+
           {points.map((p) => (
             <AdvancedMarker
               key={p.id}
@@ -174,14 +185,21 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onPointSele
 
           {draftVisible && (
             <AdvancedMarker position={marker}>
-              <div
-                className="map-marker-circle map-marker-draft"
-                style={{
-                  width: draftSize,
-                  height: draftSize,
-                  borderWidth: draftSize * 0.1,
-                }}
-              />
+              <div className="map-balloon">
+                <button
+                  className="map-balloon-cancel"
+                  title="Cancel"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMarker(null);
+                    onMarkerCancel?.();
+                  }}
+                >×</button>
+                <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 26 16 26S32 26 32 16C32 7.163 24.837 0 16 0z" fill="#e11d48"/>
+                  <circle cx="16" cy="16" r="6" fill="#fff"/>
+                </svg>
+              </div>
             </AdvancedMarker>
           )}
         </Map>

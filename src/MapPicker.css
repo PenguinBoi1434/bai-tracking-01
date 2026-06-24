@@ -29,29 +29,58 @@
 
 /* ── Locate button ── */
 .map-locate-btn {
-  position: absolute;
-  bottom: 2.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 10;
-  padding: 0.5rem 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: 10px;
   background: #fff;
-  border: 1px solid #d1d5db;
-  border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #1b6ca8;
+  border: none;
+  border-radius: 2px;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
 }
 
 .map-locate-btn:hover {
-  background: #f0f7ff;
+  background: #ebebeb;
 }
 
 .map-locate-btn:disabled {
   opacity: 0.6;
   cursor: wait;
+}
+
+/* ── Draft balloon marker ── */
+.map-balloon {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translate(-50%, -100%);
+}
+
+.map-balloon-cancel {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: #111;
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+}
+
+.map-balloon-cancel:hover {
+  background: #333;
 }
 
 /* ── Circle markers ── */

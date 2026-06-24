@@ -493,6 +493,7 @@ function App() {
             lng={form.lng}
             points={pointMarkers}
             onCoordChange={handleCoordChange}
+            onMarkerCancel={() => setForm((prev) => ({ ...prev, lat: "", lng: "" }))}
             onPointSelect={openDetail}
             focusTarget={focusTarget}
           />
