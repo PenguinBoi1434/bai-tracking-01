@@ -25,9 +25,7 @@ function formatTimeDisplay(date: string, time: string, _creatorTz?: string | nul
     }).format(dt);
 
   const viewerTime = fmt(VIEWER_TZ);
-
   if (VIEWER_TZ === MST_TZ) return viewerTime;
-
   const mstTime = fmt(MST_TZ);
   return `${viewerTime} (${mstTime} MT)`;
 }
@@ -37,13 +35,27 @@ function isVideoKey(key: string): boolean {
   return VIDEO_RE.test(key);
 }
 
-/** Recover the original filename from a stored key like ".../<ts>-<i>-<name>". */
 function filenameFromKey(key: string): string {
   const last = key.split("/").pop() ?? "download";
   return last.replace(/^\d+-(\d+-)?/, "");
 }
 
-interface PointFormData {
+function nowDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+function nowTime() {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+interface CreateFormData {
+  date: string;
+  time: string;
+  location: string;
+  description: string;
+}
+
+interface DetailFormData {
   date: string;
   time: string;
   location: string;
@@ -52,36 +64,140 @@ interface PointFormData {
   description: string;
 }
 
-const emptyForm: PointFormData = {
-  date: "",
-  time: "",
-  location: "",
-  lng: "",
-  lat: "",
-  description: "",
+const emptyDetail: DetailFormData = {
+  date: "", time: "", location: "", lng: "", lat: "", description: "",
 };
 
 function App() {
   const { user, signOut } = useAuthenticator((context) => [context.user]);
   const [points, setPoints] = useState<Schema["Point"]["type"][]>([]);
-  const [form, setForm] = useState<PointFormData>(emptyForm);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
 
-  function zoomToPoint(p: { lat: number; lng: number }) {
-    setFocusTarget({ lat: p.lat, lng: p.lng, nonce: Date.now() });
+  // ── Create modal ──
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<CreateFormData>({
+    date: "", time: "", location: "", description: "",
+  });
+  const [createLat, setCreateLat] = useState("");
+  const [createLng, setCreateLng] = useState("");
+  const [createFocus, setCreateFocus] = useState<FocusTarget | null>(null);
+  const [createFiles, setCreateFiles] = useState<File[]>([]);
+  const [createBusy, setCreateBusy] = useState(false);
+  const createFileRef = useRef<HTMLInputElement>(null);
+
+  function openCreate() {
+    setCreateForm({ date: nowDate(), time: nowTime(), location: "", description: "" });
+    setCreateLat("");
+    setCreateLng("");
+    setCreateFocus(null);
+    setCreateFiles([]);
+    setCreateBusy(false);
+    setCreateOpen(true);
   }
 
-  // ── Attribute editor (opened by clicking a point on the map) ──
+  function closeCreate() {
+    if (createBusy) return;
+    setCreateOpen(false);
+  }
+
+  function handleCreateChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    setCreateForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  }
+
+  function handleCreateCoordChange(lat: string, lng: string) {
+    setCreateLat(lat);
+    setCreateLng(lng);
+  }
+
+  function handleCreateFilesPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length === 0) return;
+    setCreateFiles((prev) => [...prev, ...files]);
+  }
+
+  function handleCreateRemoveFile(index: number) {
+    setCreateFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function useMyLocation() {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude.toFixed(6);
+        const lng = pos.coords.longitude.toFixed(6);
+        setCreateLat(lat);
+        setCreateLng(lng);
+        setCreateFocus({ lat: pos.coords.latitude, lng: pos.coords.longitude, nonce: Date.now() });
+      },
+      () => alert("Could not get your location.")
+    );
+  }
+
+  async function handleCreateSubmit() {
+    let lat = parseFloat(createLat);
+    let lng = parseFloat(createLng);
+
+    if (!createLat || !createLng || isNaN(lat) || isNaN(lng)) {
+      const useGPS = window.confirm("No location set. Use your current GPS location?");
+      if (useGPS) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+            navigator.geolocation.getCurrentPosition(resolve, reject)
+          );
+          lat = pos.coords.latitude;
+          lng = pos.coords.longitude;
+        } catch {
+          alert("Could not get your location. Please click the map to set a point.");
+          return;
+        }
+      } else {
+        return;
+      }
+    }
+
+    setCreateBusy(true);
+    try {
+      const { data: newPoint } = await client.models.Point.create({
+        date: createForm.date,
+        time: createForm.time,
+        location: createForm.location,
+        description: createForm.description,
+        lat,
+        lng,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        photos: [],
+      });
+
+      if (newPoint && createFiles.length > 0) {
+        const keys: string[] = [];
+        for (let i = 0; i < createFiles.length; i++) {
+          const file = createFiles[i];
+          const key = `point-photos/${newPoint.id}/${Date.now()}-${i}-${file.name}`;
+          await uploadData({ path: key, data: file }).result;
+          keys.push(key);
+        }
+        await client.models.Point.update({ id: newPoint.id, photos: keys });
+      }
+
+      setCreateOpen(false);
+      await fetchPoints();
+    } catch (err) {
+      alert(`Failed to create point: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setCreateBusy(false);
+    }
+  }
+
+  // ── Attribute editor (opened by clicking a point on the map or Edit button) ──
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<PointFormData>(emptyForm);
+  const [detail, setDetail] = useState<DetailFormData>(emptyDetail);
   const [detailPhotos, setDetailPhotos] = useState<string[]>([]);
+  const [detailComments, setDetailComments] = useState<string[]>([]);
+  const [newComment, setNewComment] = useState("");
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-  const [uploadMsg, setUploadMsg] = useState<{ ok: boolean; text: string } | null>(
-    null
-  );
+  const [uploadMsg, setUploadMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -90,7 +206,6 @@ function App() {
     fetchPoints();
   }, []);
 
-  // Resolve S3 keys to viewable URLs whenever the selected point's photos change.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -102,12 +217,9 @@ function App() {
       );
       if (!cancelled) setPhotoUrls(Object.fromEntries(entries));
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [detailPhotos]);
 
-  // Keyboard controls for the full-size photo lightbox.
   useEffect(() => {
     if (lightboxIndex === null) return;
     function onKey(e: KeyboardEvent) {
@@ -138,6 +250,8 @@ function App() {
       description: point.description ?? "",
     });
     setDetailPhotos((point.photos ?? []).filter((p): p is string => !!p));
+    setDetailComments((point.comments ?? []).filter((c): c is string => !!c));
+    setNewComment("");
     setPendingFiles([]);
     setUploadMsg(null);
   }
@@ -145,6 +259,8 @@ function App() {
   function closeDetail() {
     setSelectedId(null);
     setDetailPhotos([]);
+    setDetailComments([]);
+    setNewComment("");
     setPhotoUrls({});
     setPendingFiles([]);
     setUploadMsg(null);
@@ -174,13 +290,9 @@ function App() {
       const blob = await res.blob();
       const suggestedName = filenameFromKey(key);
 
-      // Preferred: native "Save As" dialog so the user picks name + location
-      // (Chromium browsers). Falls through to a normal download otherwise.
       const picker = (
         window as unknown as {
-          showSaveFilePicker?: (opts?: {
-            suggestedName?: string;
-          }) => Promise<{
+          showSaveFilePicker?: (opts?: { suggestedName?: string }) => Promise<{
             createWritable: () => Promise<{
               write: (data: Blob) => Promise<void>;
               close: () => Promise<void>;
@@ -197,12 +309,11 @@ function App() {
           await writable.close();
           return;
         } catch (err) {
-          if ((err as DOMException)?.name === "AbortError") return; // user cancelled
+          if ((err as DOMException)?.name === "AbortError") return;
           console.warn("Save picker failed, falling back to download:", err);
         }
       }
 
-      // Fallback: triggers a normal download to the browser's default location.
       const objUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = objUrl;
@@ -212,7 +323,6 @@ function App() {
       a.remove();
       URL.revokeObjectURL(objUrl);
     } catch (err) {
-      // Last resort: open the file in a new tab if a direct download fails.
       console.error("Download failed, opening in new tab:", err);
       window.open(url, "_blank", "noopener");
     } finally {
@@ -231,9 +341,7 @@ function App() {
     setLightboxIndex(remaining <= 0 ? null : Math.min(lightboxIndex, remaining - 1));
   }
 
-  function handleDetailChange(
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) {
+  function handleDetailChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
     setDetail({ ...detail, [e.target.name]: e.target.value });
   }
 
@@ -247,6 +355,7 @@ function App() {
       location: detail.location,
       description: detail.description,
       photos: detailPhotos,
+      comments: detailComments,
     });
     setBusy(false);
     closeDetail();
@@ -255,8 +364,9 @@ function App() {
 
   async function handleDeleteSelected() {
     if (!selectedId) return;
+    const label = detail.location ? `"${detail.location}"` : "this";
+    if (!window.confirm(`Are you sure you want to delete the ${label} point?`)) return;
     setBusy(true);
-    // Remove the point's photos from storage, then the record itself.
     await Promise.all(detailPhotos.map((path) => remove({ path }).catch(() => {})));
     await client.models.Point.delete({ id: selectedId });
     setBusy(false);
@@ -266,7 +376,7 @@ function App() {
 
   function handlePhotosPicked(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
-    e.target.value = ""; // allow re-selecting the same file later
+    e.target.value = "";
     if (files.length === 0) return;
     setPendingFiles((prev) => [...prev, ...files]);
     setUploadMsg(null);
@@ -316,99 +426,39 @@ function App() {
   async function fetchPoints() {
     setLoading(true);
     const { data: items, errors } = await client.models.Point.list();
-    if (!errors) {
-      setPoints(items);
-    }
+    if (!errors) setPoints(items);
     setLoading(false);
   }
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
-    setForm({ ...form, [e.target.name]: e.target.value });
+  async function handleDelete(id: string, locationName?: string | null) {
+    const label = locationName ? `"${locationName}"` : "this";
+    if (!window.confirm(`Are you sure you want to delete the ${label} point?`)) return;
+    await client.models.Point.delete({ id });
+    await fetchPoints();
   }
+
+  function zoomToPoint(p: { lat: number; lng: number }) {
+    setFocusTarget({ lat: p.lat, lng: p.lng, nonce: Date.now() });
+  }
+
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest" | "az" | "za">("newest");
+
+  const sortedPoints = useMemo(() => {
+    const copy = [...points];
+    if (sortOrder === "newest") copy.sort((a, b) => (b.date + (b.time ?? "")).localeCompare(a.date + (a.time ?? "")));
+    if (sortOrder === "oldest") copy.sort((a, b) => (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? "")));
+    if (sortOrder === "az") copy.sort((a, b) => (a.location ?? "").localeCompare(b.location ?? ""));
+    if (sortOrder === "za") copy.sort((a, b) => (b.location ?? "").localeCompare(a.location ?? ""));
+    return copy;
+  }, [points, sortOrder]);
 
   const pointMarkers: PointMarker[] = useMemo(
     () => points.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, location: p.location })),
     [points]
   );
 
-  const handleCoordChange = useCallback((lat: string, lng: string) => {
-    setForm((prev) => ({ ...prev, lat, lng }));
-  }, []);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-
-    let lat = parseFloat(form.lat);
-    let lng = parseFloat(form.lng);
-
-    if (!form.lat || !form.lng || isNaN(lat) || isNaN(lng)) {
-      const useGPS = window.confirm(
-        "No location set on the map. Use your current GPS location?"
-      );
-      if (useGPS) {
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
-            navigator.geolocation.getCurrentPosition(resolve, reject)
-          );
-          lat = pos.coords.latitude;
-          lng = pos.coords.longitude;
-          setForm((prev) => ({ ...prev, lat: String(lat), lng: String(lng) }));
-        } catch {
-          alert("Could not get your location. Please click the map to set a point.");
-          return;
-        }
-      } else {
-        return;
-      }
-    }
-
-    const payload = {
-      date: form.date,
-      time: form.time,
-      location: form.location,
-      lng,
-      lat,
-      description: form.description,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    };
-
-    if (editingId) {
-      await client.models.Point.update({ id: editingId, ...payload });
-    } else {
-      await client.models.Point.create(payload);
-    }
-
-    setForm(emptyForm);
-    setEditingId(null);
-    await fetchPoints();
-  }
-
-  function handleEdit(point: Schema["Point"]["type"]) {
-    setEditingId(point.id);
-    setForm({
-      date: point.date,
-      time: point.time ?? "",
-      location: point.location ?? "",
-      lng: String(point.lng),
-      lat: String(point.lat),
-      description: point.description ?? "",
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  }
-
-  async function handleDelete(id: string) {
-    await client.models.Point.delete({ id });
-    if (editingId === id) {
-      setForm(emptyForm);
-      setEditingId(null);
-    }
-    await fetchPoints();
-  }
-
-  function handleCancel() {
-    setForm(emptyForm);
-    setEditingId(null);
-  }
+  // The main map needs a no-op coord change handler since we removed the top form.
+  const noopCoordChange = useCallback(() => {}, []);
 
   return (
     <div className="app">
@@ -426,89 +476,44 @@ function App() {
       </header>
 
       <main className="main">
-        <section className="form-section">
-          <h2>{editingId ? "Edit Point" : "Add Point"}</h2>
-          <form onSubmit={handleSubmit} className="point-form">
-            <div className="form-row">
-              <label>
-                Date
-                <input
-                  name="date"
-                  type="date"
-                  value={form.date}
-                  onChange={handleChange}
-                  required
-                />
-              </label>
-              <label>
-                Time
-                <input
-                  name="time"
-                  type="time"
-                  value={form.time}
-                  onChange={handleChange}
-                  required
-                />
-              </label>
-              <label className="field-wide">
-                Location
-                <input
-                  name="location"
-                  type="text"
-                  placeholder="e.g. Central Park, NYC"
-                  value={form.location}
-                  onChange={handleChange}
-                  required
-                />
-              </label>
-              <label className="field-wide">
-                Description
-                <input
-                  name="description"
-                  type="text"
-                  placeholder="Describe this point..."
-                  value={form.description}
-                  onChange={handleChange}
-                  required
-                />
-              </label>
-
-              <div className="form-actions">
-                <button type="submit" className="btn btn-primary">
-                  {editingId ? "Update" : "Create"}
-                </button>
-                {editingId && (
-                  <button type="button" className="btn btn-secondary" onClick={handleCancel}>
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
-          </form>
-        </section>
-
         <section className="map-section">
           <MapPicker
-            lat={form.lat}
-            lng={form.lng}
+            lat=""
+            lng=""
             points={pointMarkers}
-            onCoordChange={handleCoordChange}
-            onMarkerCancel={() => setForm((prev) => ({ ...prev, lat: "", lng: "" }))}
+            onCoordChange={noopCoordChange}
             onPointSelect={openDetail}
             focusTarget={focusTarget}
           />
         </section>
 
         <section className="list-section">
-          <h2>Points ({points.length})</h2>
+          <div className="list-header">
+            <h2>Points ({points.length})</h2>
+            <div className="list-header-right">
+              <select
+                className="sort-select"
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as typeof sortOrder)}
+              >
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="az">Location A–Z</option>
+                <option value="za">Location Z–A</option>
+              </select>
+              <button className="btn btn-primary btn-create" onClick={openCreate}>
+                + Create Point
+              </button>
+            </div>
+          </div>
 
           {loading ? (
             <p className="loading">Loading…</p>
           ) : points.length === 0 ? (
-            <p className="empty">No points yet. Add one above.</p>
+            <p className="empty">No points yet. Create one above.</p>
           ) : (
             <div className="point-grid">
-              {points.map((p) => (
+              {sortedPoints.map((p) => (
                 <div key={p.id} className="point-card">
                   <div className="point-card-header">
                     <span className="point-date">{p.date}</span>
@@ -520,10 +525,10 @@ function App() {
                     <button className="btn btn-small btn-zoom" onClick={() => zoomToPoint(p)}>
                       Locate me
                     </button>
-                    <button className="btn btn-small btn-edit" onClick={() => handleEdit(p)}>
+                    <button className="btn btn-small btn-edit" onClick={() => openDetail(p.id)}>
                       Edit
                     </button>
-                    <button className="btn btn-small btn-delete" onClick={() => handleDelete(p.id)}>
+                    <button className="btn btn-small btn-delete" onClick={() => handleDelete(p.id, p.location)}>
                       Delete
                     </button>
                   </div>
@@ -534,6 +539,154 @@ function App() {
         </section>
       </main>
 
+      {/* ── Create Point modal ── */}
+      {createOpen && (
+        <div className="attr-overlay" onClick={closeCreate}>
+          <div className="create-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="attr-window-header">
+              <h2>Create Point</h2>
+              <button
+                type="button"
+                className="attr-close"
+                title="Close"
+                onClick={closeCreate}
+                disabled={createBusy}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="create-fields">
+              <div className="create-row">
+                <label>
+                  Date
+                  <input
+                    name="date"
+                    type="date"
+                    value={createForm.date}
+                    onChange={handleCreateChange}
+                    required
+                  />
+                </label>
+                <label>
+                  Time
+                  <input
+                    name="time"
+                    type="time"
+                    value={createForm.time}
+                    onChange={handleCreateChange}
+                    required
+                  />
+                </label>
+              </div>
+
+              <label>
+                Location
+                <input
+                  name="location"
+                  type="text"
+                  placeholder="e.g. Central Park, NYC"
+                  value={createForm.location}
+                  onChange={handleCreateChange}
+                  required
+                />
+              </label>
+
+              <label>
+                Description
+                <textarea
+                  name="description"
+                  placeholder="Describe this point…"
+                  value={createForm.description}
+                  onChange={handleCreateChange}
+                  rows={2}
+                />
+              </label>
+            </div>
+
+            <div className="create-map-section">
+              <div className="create-map-label">
+                <span>
+                  {createLat && createLng
+                    ? `${parseFloat(createLat).toFixed(5)}, ${parseFloat(createLng).toFixed(5)}`
+                    : "Click the map or use your location"}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-small"
+                  onClick={useMyLocation}
+                  disabled={createBusy}
+                >
+                  Use My Location
+                </button>
+              </div>
+              <div className="mini-map-wrap">
+                <MapPicker
+                  lat={createLat}
+                  lng={createLng}
+                  points={pointMarkers}
+                  onCoordChange={handleCreateCoordChange}
+                  onMarkerCancel={() => { setCreateLat(""); setCreateLng(""); }}
+                  focusTarget={createFocus}
+                />
+              </div>
+            </div>
+
+            {createFiles.length > 0 && (
+              <div className="attr-pending">
+                <p className="attr-pending-title">
+                  {createFiles.length} file{createFiles.length > 1 ? "s" : ""} queued:
+                </p>
+                <ul>
+                  {createFiles.map((f, i) => (
+                    <li key={`${f.name}-${i}`}>
+                      <span>{f.name}</span>
+                      <button
+                        type="button"
+                        className="attr-pending-remove"
+                        onClick={() => handleCreateRemoveFile(i)}
+                        disabled={createBusy}
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <input
+              ref={createFileRef}
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              hidden
+              onChange={handleCreateFilesPicked}
+            />
+
+            <div className="attr-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => createFileRef.current?.click()}
+                disabled={createBusy}
+              >
+                Photo/Video
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleCreateSubmit}
+                disabled={createBusy}
+              >
+                {createBusy ? "Creating…" : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit / attribute modal ── */}
       {selectedPoint && (
         <div className="attr-overlay" onClick={closeDetail}>
           <div className="attr-window" onClick={(e) => e.stopPropagation()}>
@@ -552,42 +705,22 @@ function App() {
 
             <label>
               Date
-              <input
-                name="date"
-                type="date"
-                value={detail.date}
-                onChange={handleDetailChange}
-              />
+              <input name="date" type="date" value={detail.date} onChange={handleDetailChange} />
             </label>
 
             <label>
               Time
-              <input
-                name="time"
-                type="time"
-                value={detail.time}
-                onChange={handleDetailChange}
-              />
+              <input name="time" type="time" value={detail.time} onChange={handleDetailChange} />
             </label>
 
             <label>
               Location
-              <input
-                name="location"
-                type="text"
-                value={detail.location}
-                onChange={handleDetailChange}
-              />
+              <input name="location" type="text" value={detail.location} onChange={handleDetailChange} />
             </label>
 
             <label>
               Description
-              <textarea
-                name="description"
-                value={detail.description}
-                onChange={handleDetailChange}
-                rows={3}
-              />
+              <textarea name="description" value={detail.description} onChange={handleDetailChange} rows={3} />
             </label>
 
             <div className="attr-photos">
@@ -632,8 +765,7 @@ function App() {
             {pendingFiles.length > 0 && (
               <div className="attr-pending">
                 <p className="attr-pending-title">
-                  {pendingFiles.length} photo
-                  {pendingFiles.length > 1 ? "s" : ""} ready to upload:
+                  {pendingFiles.length} photo{pendingFiles.length > 1 ? "s" : ""} ready to upload:
                 </p>
                 <ul>
                   {pendingFiles.map((f, i) => (
@@ -654,11 +786,7 @@ function App() {
             )}
 
             {uploadMsg && (
-              <p
-                className={
-                  uploadMsg.ok ? "attr-upload-msg" : "attr-upload-msg attr-upload-err"
-                }
-              >
+              <p className={uploadMsg.ok ? "attr-upload-msg" : "attr-upload-msg attr-upload-err"}>
                 {uploadMsg.ok ? "✓ " : "⚠ "}
                 {uploadMsg.text}
               </p>
@@ -673,12 +801,64 @@ function App() {
               onChange={handlePhotosPicked}
             />
 
+            <div className="attr-comments">
+              <p className="attr-comments-title">Comments</p>
+              {detailComments.length === 0 ? (
+                <p className="attr-comments-empty">No comments yet.</p>
+              ) : (
+                <ul className="attr-comments-list">
+                  {detailComments.map((c, i) => {
+                    const [ts, author, ...msgParts] = c.split("|");
+                    const msg = msgParts.join("|");
+                    const date = new Date(ts).toLocaleString();
+                    return (
+                      <li key={i} className="attr-comment">
+                        <div className="attr-comment-meta">{author} · {date}</div>
+                        <div className="attr-comment-text">{msg}</div>
+                        <button
+                          className="attr-comment-delete"
+                          title="Delete comment"
+                          onClick={() => setDetailComments((prev) => prev.filter((_, j) => j !== i))}
+                          disabled={busy}
+                        >×</button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <div className="attr-comment-input-row">
+                <input
+                  type="text"
+                  className="attr-comment-input"
+                  placeholder="Add a comment…"
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newComment.trim()) {
+                      const entry = `${new Date().toISOString()}|${user?.signInDetails?.loginId ?? "unknown"}|${newComment.trim()}`;
+                      setDetailComments((prev) => [...prev, entry]);
+                      setNewComment("");
+                    }
+                  }}
+                  disabled={busy}
+                />
+                <button
+                  className="btn btn-secondary btn-small"
+                  onClick={() => {
+                    if (!newComment.trim()) return;
+                    const entry = `${new Date().toISOString()}|${user?.signInDetails?.loginId ?? "unknown"}|${newComment.trim()}`;
+                    setDetailComments((prev) => [...prev, entry]);
+                    setNewComment("");
+                  }}
+                  disabled={busy}
+                >
+                  Post
+                </button>
+              </div>
+            </div>
+
             <div className="attr-actions">
-              <button
-                className="btn btn-primary"
-                onClick={handleApply}
-                disabled={busy}
-              >
+              <button className="btn btn-primary" onClick={handleApply} disabled={busy}>
                 Apply
               </button>
               <button
@@ -695,11 +875,7 @@ function App() {
               >
                 {busy && pendingFiles.length > 0 ? "Uploading…" : "Upload"}
               </button>
-              <button
-                className="btn btn-delete"
-                onClick={handleDeleteSelected}
-                disabled={busy}
-              >
+              <button className="btn btn-delete" onClick={handleDeleteSelected} disabled={busy}>
                 Delete
               </button>
             </div>
@@ -709,11 +885,7 @@ function App() {
 
       {selectedPoint && lightboxIndex !== null && detailPhotos[lightboxIndex] && (
         <div className="lightbox-overlay" onClick={() => setLightboxIndex(null)}>
-          <button
-            className="lightbox-close"
-            title="Close"
-            onClick={() => setLightboxIndex(null)}
-          >
+          <button className="lightbox-close" title="Close" onClick={() => setLightboxIndex(null)}>
             ×
           </button>
 
@@ -721,10 +893,7 @@ function App() {
             <button
               className="lightbox-nav lightbox-prev"
               title="Previous"
-              onClick={(e) => {
-                e.stopPropagation();
-                lightboxPrev();
-              }}
+              onClick={(e) => { e.stopPropagation(); lightboxPrev(); }}
             >
               ‹
             </button>
@@ -732,33 +901,18 @@ function App() {
 
           <div className="lightbox-content" onClick={(e) => e.stopPropagation()}>
             {isVideoKey(detailPhotos[lightboxIndex]) ? (
-              <video
-                src={photoUrls[detailPhotos[lightboxIndex]]}
-                controls
-                autoPlay
-              />
+              <video src={photoUrls[detailPhotos[lightboxIndex]]} controls autoPlay />
             ) : (
-              <img
-                src={photoUrls[detailPhotos[lightboxIndex]]}
-                alt={`Photo ${lightboxIndex + 1}`}
-              />
+              <img src={photoUrls[detailPhotos[lightboxIndex]]} alt={`Photo ${lightboxIndex + 1}`} />
             )}
             <div className="lightbox-bar">
               <span className="lightbox-counter">
                 {lightboxIndex + 1} / {detailPhotos.length}
               </span>
-              <button
-                className="btn btn-secondary"
-                onClick={handleDownload}
-                disabled={busy}
-              >
+              <button className="btn btn-secondary" onClick={handleDownload} disabled={busy}>
                 Download
               </button>
-              <button
-                className="btn btn-delete"
-                onClick={handleLightboxDelete}
-                disabled={busy}
-              >
+              <button className="btn btn-delete" onClick={handleLightboxDelete} disabled={busy}>
                 Delete
               </button>
             </div>
@@ -768,10 +922,7 @@ function App() {
             <button
               className="lightbox-nav lightbox-next"
               title="Next"
-              onClick={(e) => {
-                e.stopPropagation();
-                lightboxNext();
-              }}
+              onClick={(e) => { e.stopPropagation(); lightboxNext(); }}
             >
               ›
             </button>

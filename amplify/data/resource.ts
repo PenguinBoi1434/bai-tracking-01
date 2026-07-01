@@ -11,6 +11,7 @@ const schema = a.schema({
       description: a.string(),
       photos: a.string().array(),
       timezone: a.string(),
+      comments: a.string().array(),
     })
     .authorization((allow) => [allow.authenticated()]),
 });

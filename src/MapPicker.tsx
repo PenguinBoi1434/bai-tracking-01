@@ -28,6 +28,43 @@ function MapFocuser({ target }: { target: FocusTarget | null }) {
   return null;
 }
 
+function LocateButton({ onLocate }: { onLocate: (pos: google.maps.LatLngLiteral) => void }) {
+  const map = useMap();
+  const [busy, setBusy] = useState(false);
+
+  function handleLocate() {
+    if (!map) return;
+    setBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        map.panTo(loc);
+        map.setZoom(18);
+        onLocate(loc);
+        setBusy(false);
+      },
+      () => {
+        alert("Could not get your location.");
+        setBusy(false);
+      }
+    );
+  }
+
+  return (
+    <MapControl position={ControlPosition.RIGHT_BOTTOM}>
+      <button className="map-locate-btn" onClick={handleLocate} disabled={busy} title="My location">
+        {busy ? (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#1a73e8"><circle cx="12" cy="12" r="4"/></svg>
+        ) : (
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="#1a73e8" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
+          </svg>
+        )}
+      </button>
+    </MapControl>
+  );
+}
+
 const BENT_NM = { lat: 33.1581, lng: -105.8572 };
 const DEFAULT_ZOOM = 14;
 
@@ -54,40 +91,6 @@ function markerSize(zoom: number): number {
   return Math.max(1, Math.min(20, size));   // 2px at default zoom (clamp 1px–20px)
 }
 
-function LocateButton() {
-  const map = useMap();
-  const [busy, setBusy] = useState(false);
-
-  function handleLocate() {
-    if (!map) return;
-    setBusy(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        map.panTo({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        map.setZoom(18);
-        setBusy(false);
-      },
-      () => {
-        alert("Could not get your location.");
-        setBusy(false);
-      }
-    );
-  }
-
-  return (
-    <MapControl position={ControlPosition.RIGHT_BOTTOM}>
-      <button className="map-locate-btn" onClick={handleLocate} disabled={busy} title="My location">
-        {busy ? (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="#1a73e8"><circle cx="12" cy="12" r="4"/></svg>
-        ) : (
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="#1a73e8" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z"/>
-          </svg>
-        )}
-      </button>
-    </MapControl>
-  );
-}
 
 export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCancel, onPointSelect, focusTarget }: MapPickerProps) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
@@ -98,6 +101,8 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
   const initialCenter = hasExisting
     ? { lat: parseFloat(lat), lng: parseFloat(lng) }
     : BENT_NM;
+
+  const [geoMarker, setGeoMarker] = useState<google.maps.LatLngLiteral | null>(null);
 
   const [marker, setMarker] = useState<google.maps.LatLngLiteral | null>(
     hasExisting ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null
@@ -161,7 +166,23 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
           onCameraChanged={handleCameraChange}
         >
           <MapFocuser target={focusTarget ?? null} />
-          <LocateButton />
+          <LocateButton onLocate={(pos) => setGeoMarker(pos)} />
+
+          {geoMarker && (
+            <AdvancedMarker position={geoMarker}>
+              <div className="map-balloon">
+                <button
+                  className="map-balloon-cancel"
+                  title="Cancel"
+                  onClick={(e) => { e.stopPropagation(); setGeoMarker(null); }}
+                >×</button>
+                <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 26 16 26S32 26 32 16C32 7.163 24.837 0 16 0z" fill="#e11d48"/>
+                  <circle cx="16" cy="16" r="6" fill="#fff"/>
+                </svg>
+              </div>
+            </AdvancedMarker>
+          )}
 
           {points.map((p) => (
             <AdvancedMarker
