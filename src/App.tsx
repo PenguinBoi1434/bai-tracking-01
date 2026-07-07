@@ -30,15 +30,21 @@ function formatTimeDisplay(date: string, time: string, _creatorTz?: string | nul
   return `${viewerTime} (${mstTime} MT)`;
 }
 
-const DEFAULT_CATEGORIES = [
-  { id: "default",     name: "Default",      color: "#e11d48" },
-  { id: "sewer",       name: "Sewer Water",  color: "#7c3aed" },
-  { id: "water-lines", name: "Water Lines",  color: "#1d4ed8" },
-  { id: "well",        name: "Well",         color: "#ca8a04" },
-  { id: "tank",        name: "Tank",         color: "#0891b2" },
+// Categories from category.csv (Category,Color)
+const CATEGORIES = [
+  { name: "Water", color: "#1d4ed8" },
+  { name: "Sewer",  color: "#7c3aed" },
+  { name: "Well",   color: "#ca8a04" },
 ];
 
+const DEFAULT_CATEGORY_COLOR = "#e11d48";
+function getCategoryColor(category: string | null | undefined): string {
+  if (!category) return DEFAULT_CATEGORY_COLOR;
+  return CATEGORIES.find((c) => c.name === category)?.color ?? DEFAULT_CATEGORY_COLOR;
+}
+
 const VIDEO_RE = /\.(mp4|mov|webm|avi|mkv|m4v|ogv)$/i;
+
 function isVideoKey(key: string): boolean {
   return VIDEO_RE.test(key);
 }
@@ -81,43 +87,6 @@ function App() {
   const [points, setPoints] = useState<Schema["Point"]["type"][]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ── Categories ──
-  const [categories, setCategories] = useState<Schema["Category"]["type"][]>([]);
-  const [legendOpen, setLegendOpen] = useState(false);
-  const [newCatName, setNewCatName] = useState("");
-  const [newCatColor, setNewCatColor] = useState("#6b7280");
-
-  useEffect(() => { fetchCategories(); }, []);
-
-  async function fetchCategories() {
-    const { data } = await client.models.Category.list();
-    setCategories(data);
-  }
-
-  async function handleAddCategory() {
-    if (!newCatName.trim()) return;
-    await client.models.Category.create({ name: newCatName.trim(), color: newCatColor });
-    setNewCatName("");
-    setNewCatColor("#6b7280");
-    await fetchCategories();
-  }
-
-  async function handleDeleteCategory(id: string) {
-    await client.models.Category.delete({ id });
-    await fetchCategories();
-  }
-
-  function getCategoryColor(categoryId: string | null | undefined): string {
-    if (!categoryId) return "#e11d48";
-    const custom = categories.find((c) => c.id === categoryId);
-    if (custom) return custom.color;
-    const def = DEFAULT_CATEGORIES.find((c) => c.id === categoryId);
-    return def?.color ?? "#e11d48";
-  }
-
-  function allCategories() {
-    return [...DEFAULT_CATEGORIES, ...categories];
-  }
   const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
 
   // ── Create modal ──
@@ -130,7 +99,6 @@ function App() {
   const [createFocus, setCreateFocus] = useState<FocusTarget | null>(null);
   const [createFiles, setCreateFiles] = useState<File[]>([]);
   const [createBusy, setCreateBusy] = useState(false);
-  const [createCategoryId, setCreateCategoryId] = useState("default");
   const createFileRef = useRef<HTMLInputElement>(null);
 
   function openCreate() {
@@ -140,7 +108,6 @@ function App() {
     setCreateFocus(null);
     setCreateFiles([]);
     setCreateBusy(false);
-    setCreateCategoryId("default");
     setCreateOpen(true);
   }
 
@@ -215,7 +182,6 @@ function App() {
         lng,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         photos: [],
-        categoryId: createCategoryId,
       });
 
       if (newPoint && createFiles.length > 0) {
@@ -243,7 +209,7 @@ function App() {
   const [detail, setDetail] = useState<DetailFormData>(emptyDetail);
   const [detailPhotos, setDetailPhotos] = useState<string[]>([]);
   const [detailComments, setDetailComments] = useState<string[]>([]);
-  const [detailCategoryId, setDetailCategoryId] = useState("default");
+  const [detailCategory, setDetailCategory] = useState("");
   const [newComment, setNewComment] = useState("");
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -301,7 +267,7 @@ function App() {
     });
     setDetailPhotos((point.photos ?? []).filter((p): p is string => !!p));
     setDetailComments((point.comments ?? []).filter((c): c is string => !!c));
-    setDetailCategoryId(point.categoryId ?? "default");
+    setDetailCategory(point.category ?? "");
     setNewComment("");
     setPendingFiles([]);
     setUploadMsg(null);
@@ -311,6 +277,7 @@ function App() {
     setSelectedId(null);
     setDetailPhotos([]);
     setDetailComments([]);
+    setDetailCategory("");
     setNewComment("");
     setPhotoUrls({});
     setPendingFiles([]);
@@ -407,7 +374,7 @@ function App() {
       description: detail.description,
       photos: detailPhotos,
       comments: detailComments,
-      categoryId: detailCategoryId,
+      category: detailCategory || null,
     });
     setBusy(false);
     closeDetail();
@@ -521,8 +488,8 @@ function App() {
   }, [points, sortOrder, searchName, dateFrom, dateTo]);
 
   const pointMarkers: PointMarker[] = useMemo(
-    () => points.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, location: p.location, color: getCategoryColor(p.categoryId) })),
-    [points, categories]
+    () => points.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, location: p.location, color: getCategoryColor(p.category) })),
+    [points]
   );
 
   // The main map needs a no-op coord change handler since we removed the top form.
@@ -536,9 +503,6 @@ function App() {
           <h1>Point Tracker</h1>
         </div>
         <div className="header-user">
-          <button className="btn btn-secondary btn-small" onClick={() => setLegendOpen((o) => !o)}>
-            🎨 Categories
-          </button>
           <span className="header-email">{user?.signInDetails?.loginId}</span>
           <button className="btn btn-secondary btn-small" onClick={signOut}>
             Sign out
@@ -547,50 +511,6 @@ function App() {
       </header>
 
       <main className="main">
-        {legendOpen && (
-          <section className="legend-panel">
-            <div className="legend-header">
-              <h2>Categories</h2>
-              <button className="attr-close" onClick={() => setLegendOpen(false)}>×</button>
-            </div>
-            <ul className="legend-list">
-              {DEFAULT_CATEGORIES.map((c) => (
-                <li key={c.id} className="legend-item">
-                  <span className="legend-swatch" style={{ background: c.color }} />
-                  <span className="legend-name">{c.name}</span>
-                  <span className="legend-default-badge">default</span>
-                </li>
-              ))}
-              {categories.map((c) => (
-                <li key={c.id} className="legend-item">
-                  <span className="legend-swatch" style={{ background: c.color }} />
-                  <span className="legend-name">{c.name}</span>
-                  <button className="legend-delete" onClick={() => handleDeleteCategory(c.id)}>×</button>
-                </li>
-              ))}
-            </ul>
-            <div className="legend-add">
-              <input
-                type="text"
-                placeholder="New category name…"
-                value={newCatName}
-                onChange={(e) => setNewCatName(e.target.value)}
-                className="legend-add-input"
-              />
-              <input
-                type="color"
-                value={newCatColor}
-                onChange={(e) => setNewCatColor(e.target.value)}
-                className="legend-color-pick"
-                title="Pick color"
-              />
-              <button className="btn btn-primary btn-small" onClick={handleAddCategory}>
-                Add
-              </button>
-            </div>
-          </section>
-        )}
-
         <section className="map-section">
           <MapPicker
             lat=""
@@ -662,7 +582,7 @@ function App() {
           ) : (
             <div className="point-grid">
               {sortedPoints.map((p) => (
-                <div key={p.id} className="point-card" style={{ borderLeft: `4px solid ${getCategoryColor(p.categoryId)}` }}>
+                <div key={p.id} className="point-card" style={{ borderLeft: `4px solid ${getCategoryColor(p.category)}` }}>
                   <div className="point-card-header">
                     <span className="point-date">{p.date}</span>
                     <span className="point-time">{formatTimeDisplay(p.date, p.time ?? "", p.timezone)}</span>
@@ -749,19 +669,6 @@ function App() {
                   onChange={handleCreateChange}
                   rows={2}
                 />
-              </label>
-
-              <label>
-                Category
-                <select
-                  className="category-select"
-                  value={createCategoryId}
-                  onChange={(e) => setCreateCategoryId(e.target.value)}
-                >
-                  {allCategories().map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
               </label>
             </div>
 
@@ -888,11 +795,12 @@ function App() {
               Category
               <select
                 className="category-select"
-                value={detailCategoryId}
-                onChange={(e) => setDetailCategoryId(e.target.value)}
+                value={detailCategory}
+                onChange={(e) => setDetailCategory(e.target.value)}
               >
-                {allCategories().map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                <option value="">— None —</option>
+                {CATEGORIES.map((c) => (
+                  <option key={c.name} value={c.name}>{c.name}</option>
                 ))}
               </select>
             </label>
