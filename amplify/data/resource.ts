@@ -12,6 +12,14 @@ const schema = a.schema({
       photos: a.string().array(),
       timezone: a.string(),
       comments: a.string().array(),
+      categoryId: a.string(),
+    })
+    .authorization((allow) => [allow.authenticated()]),
+
+  Category: a
+    .model({
+      name: a.string().required(),
+      color: a.string().required(),
     })
     .authorization((allow) => [allow.authenticated()]),
 });

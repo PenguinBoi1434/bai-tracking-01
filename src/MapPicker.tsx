@@ -73,6 +73,7 @@ export interface PointMarker {
   lat: number;
   lng: number;
   location: string | null | undefined;
+  color?: string;
 }
 
 interface MapPickerProps {
@@ -198,6 +199,8 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
                     width: savedSize,
                     height: savedSize,
                     borderWidth: savedSize * 0.1,
+                    background: p.color ?? "#e11d48",
+                    borderColor: p.color ?? "#b91c1c",
                   }}
                 />
               </div>
