@@ -85,35 +85,31 @@
 }
 
 /* ── Circle markers ── */
-/* Invisible, larger hit area so the tiny circle is easy to click. */
-.map-marker-hit {
+/* Saved/draft points are rendered as native `google.maps.Circle` overlays
+   (true geographic radius), so they have no CSS here. Only the draft marker's
+   cancel button (an HTML element layered above the circle) needs styling. */
+.map-draft-cancel {
+  position: absolute;
+  top: 0;
+  left: 0;
   transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: #111;
+  color: #fff;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
 }
 
-.map-marker-hit .map-marker-circle {
-  transform: none; /* centered by the hit-area flexbox instead */
-}
-
-.map-marker-circle {
-  border-radius: 50%;
-  border-style: solid;
-  border-color: #b91c1c;
-  background: #e11d48;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-/* Draft (unsaved) marker: lighter, pulsing */
-.map-marker-draft {
-  border-color: #3b82f6;
-  background: rgba(59, 130, 246, 0.15);
-  animation: marker-pulse 1.2s ease-in-out infinite;
+.map-draft-cancel:hover {
+  background: #333;
 }
 
 @keyframes marker-pulse {

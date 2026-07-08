@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   APIProvider,
   Map,
@@ -6,7 +6,6 @@ import {
   MapControl,
   ControlPosition,
   useMap,
-  MapCameraChangedEvent,
   MapMouseEvent,
 } from "@vis.gl/react-google-maps";
 import "./MapPicker.css";
@@ -67,6 +66,8 @@ function LocateButton({ onLocate }: { onLocate: (pos: google.maps.LatLngLiteral)
 
 const BENT_NM = { lat: 33.1581, lng: -105.8572 };
 const DEFAULT_ZOOM = 14;
+/** Default geographic radius (meters) for circle markers when none is supplied. */
+const DEFAULT_RADIUS_M = 25;
 
 export interface PointMarker {
   id: string;
@@ -74,6 +75,8 @@ export interface PointMarker {
   lng: number;
   location: string | null | undefined;
   color?: string;
+  /** Geographic radius in meters for the rendered circle. Defaults to DEFAULT_RADIUS_M. */
+  radius?: number;
 }
 
 interface MapPickerProps {
@@ -86,17 +89,72 @@ interface MapPickerProps {
   focusTarget?: FocusTarget | null;
 }
 
-/** Scale marker diameter relative to the default zoom so circles grow/shrink with the view. */
-function markerSize(zoom: number): number {
-  const size = 2 * Math.pow(2, zoom - DEFAULT_ZOOM);
-  return Math.max(1, Math.min(20, size));   // 2px at default zoom (clamp 1px–20px)
+/**
+ * Renders a true geographic-radius circle via the native `google.maps.Circle`
+ * overlay. Unlike CSS-sized markers, the circle's geometry is correct in world
+ * space at every zoom level — so the anchor never appears to drift when zooming.
+ *
+ * Note: `google.maps.Circle` does NOT support dashed strokes. The draft state is
+ * conveyed via color/fill-opacity/weight instead.
+ */
+function CircleMarker({
+  center,
+  radius,
+  fillColor,
+  strokeColor,
+  fillOpacity = 0.5,
+  strokeWeight = 2,
+  onClick,
+}: {
+  center: google.maps.LatLngLiteral;
+  radius: number;
+  fillColor: string;
+  strokeColor: string;
+  fillOpacity?: number;
+  strokeWeight?: number;
+  onClick?: () => void;
+}) {
+  const map = useMap();
+  const circleRef = useRef<google.maps.Circle | null>(null);
+  const clickRef = useRef<google.maps.MapsEventListener | null>(null);
+
+  // Create / destroy the underlying circle overlay when the map mounts/unmounts.
+  useEffect(() => {
+    if (!map) return;
+    const c = new google.maps.Circle({ map, center, radius });
+    circleRef.current = c;
+    return () => { c.setMap(null); clickRef.current?.remove(); clickRef.current = null; };
+  }, [map]);
+
+  // Apply option changes when props update.
+  useEffect(() => {
+    const c = circleRef.current;
+    if (!c) return;
+    c.setCenter(center);
+    c.setRadius(radius);
+    c.setOptions({
+      fillColor,
+      fillOpacity,
+      strokeColor,
+      strokeWeight,
+      strokeOpacity: 0.9,
+    });
+  }, [center, radius, fillColor, strokeColor, fillOpacity, strokeWeight]);
+
+  // (Re)bind click handler when it changes.
+  useEffect(() => {
+    const c = circleRef.current;
+    if (!c || !onClick) return;
+    clickRef.current = c.addListener("click", onClick);
+    return () => { clickRef.current?.remove(); clickRef.current = null; };
+  }, [onClick]);
+
+  return null;
 }
 
 
 export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCancel, onPointSelect, focusTarget }: MapPickerProps) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
-
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
 
   const hasExisting = lat !== "" && lng !== "";
   const initialCenter = hasExisting
@@ -109,10 +167,6 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
     hasExisting ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null
   );
 
-  const handleCameraChange = useCallback((ev: MapCameraChangedEvent) => {
-    setZoom(ev.detail.zoom);
-  }, []);
-
   const handleMapClick = useCallback(
     (ev: MapMouseEvent) => {
       const clicked = ev.detail.latLng;
@@ -124,8 +178,6 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
     },
     [onCoordChange]
   );
-
-  const savedSize = markerSize(zoom);
 
   const draftVisible = useMemo(
     () =>
@@ -164,7 +216,6 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
           gestureHandling="greedy"
           disableDefaultUI={false}
           onClick={handleMapClick}
-          onCameraChanged={handleCameraChange}
         >
           <MapFocuser target={focusTarget ?? null} />
           <LocateButton onLocate={(pos) => setGeoMarker(pos)} />
@@ -186,32 +237,30 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
           )}
 
           {points.map((p) => (
-            <AdvancedMarker
+            <CircleMarker
               key={p.id}
-              position={{ lat: p.lat, lng: p.lng }}
-              clickable
+              center={{ lat: p.lat, lng: p.lng }}
+              radius={p.radius ?? DEFAULT_RADIUS_M}
+              fillColor={p.color ?? "#e11d48"}
+              strokeColor={p.color ?? "#b91c1c"}
               onClick={() => onPointSelect?.(p.id)}
-            >
-              <div className="map-marker-hit" title={p.location ?? ""}>
-                <div
-                  className="map-marker-circle"
-                  style={{
-                    width: savedSize,
-                    height: savedSize,
-                    borderWidth: savedSize * 0.1,
-                    background: p.color ?? "#e11d48",
-                    borderColor: p.color ?? "#b91c1c",
-                  }}
-                />
-              </div>
-            </AdvancedMarker>
+            />
           ))}
 
           {draftVisible && (
-            <AdvancedMarker position={marker}>
-              <div className="map-balloon">
+            <>
+              <CircleMarker
+                center={marker!}
+                radius={DEFAULT_RADIUS_M}
+                fillColor="#3b82f6"
+                strokeColor="#1d4ed8"
+                fillOpacity={0.25}
+                strokeWeight={3}
+              />
+              {/* Cancel button overlay — keeps the × clickable above the circle. */}
+              <AdvancedMarker position={marker!}>
                 <button
-                  className="map-balloon-cancel"
+                  className="map-draft-cancel"
                   title="Cancel"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -219,12 +268,8 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
                     onMarkerCancel?.();
                   }}
                 >×</button>
-                <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 26 16 26S32 26 32 16C32 7.163 24.837 0 16 0z" fill="#e11d48"/>
-                  <circle cx="16" cy="16" r="6" fill="#fff"/>
-                </svg>
-              </div>
-            </AdvancedMarker>
+              </AdvancedMarker>
+            </>
           )}
         </Map>
       </APIProvider>
