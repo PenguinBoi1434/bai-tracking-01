@@ -465,7 +465,9 @@ function App() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  const sortedPoints = useMemo(() => {
+  // Filtering only — the single source of truth for "which points pass."
+  // Consumed by both the list (after sorting) and the main map.
+  const filteredPoints = useMemo(() => {
     let copy = [...points];
 
     if (searchName.trim()) {
@@ -480,14 +482,27 @@ function App() {
     if (dateFrom) copy = copy.filter((p) => p.date >= dateFrom);
     if (dateTo) copy = copy.filter((p) => p.date <= dateTo);
 
+    return copy;
+  }, [points, searchName, dateFrom, dateTo]);
+
+  // Sorting applied on top of the filtered set, for list display only.
+  const sortedPoints = useMemo(() => {
+    const copy = [...filteredPoints];
     if (sortOrder === "newest") copy.sort((a, b) => (b.date + (b.time ?? "")).localeCompare(a.date + (a.time ?? "")));
     if (sortOrder === "oldest") copy.sort((a, b) => (a.date + (a.time ?? "")).localeCompare(b.date + (b.time ?? "")));
     if (sortOrder === "az") copy.sort((a, b) => (a.location ?? "").localeCompare(b.location ?? ""));
     if (sortOrder === "za") copy.sort((a, b) => (b.location ?? "").localeCompare(a.location ?? ""));
     return copy;
-  }, [points, sortOrder, searchName, dateFrom, dateTo]);
+  }, [filteredPoints, sortOrder]);
 
+  // Markers for the main map — respects the active filters (date + search).
   const pointMarkers: PointMarker[] = useMemo(
+    () => filteredPoints.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, location: p.location, color: getCategoryColor(p.category) })),
+    [filteredPoints]
+  );
+
+  // Markers for the create-modal map — always shows every point as reference.
+  const allPointMarkers: PointMarker[] = useMemo(
     () => points.map((p) => ({ id: p.id, lat: p.lat, lng: p.lng, location: p.location, color: getCategoryColor(p.category) })),
     [points]
   );
@@ -692,7 +707,7 @@ function App() {
                 <MapPicker
                   lat={createLat}
                   lng={createLng}
-                  points={pointMarkers}
+                  points={allPointMarkers}
                   onCoordChange={handleCreateCoordChange}
                   onMarkerCancel={() => { setCreateLat(""); setCreateLng(""); }}
                   focusTarget={createFocus}
