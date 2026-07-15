@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useAuthenticator } from "@aws-amplify/ui-react";
+import { fetchAuthSession } from "aws-amplify/auth";
 import { generateClient } from "aws-amplify/data";
 import { uploadData, getUrl, remove } from "aws-amplify/storage";
 import type { Schema } from "../amplify/data/resource";
 import MapPicker from "./MapPicker";
 import type { PointMarker, FocusTarget } from "./MapPicker";
+import ProjectPicker from "./ProjectPicker";
+import type { ProjectSummary, Role } from "./ProjectPicker";
 import "./App.css";
 
 const client = generateClient<Schema>();
@@ -84,6 +87,44 @@ const emptyDetail: DetailFormData = {
 
 function App() {
   const { user, signOut } = useAuthenticator((context) => [context.user]);
+
+  // ── Role + project grants (from Cognito token custom attributes) ──
+  // Set per-user in AWS Console: custom:role ("master"|"worker"|"field_worker")
+  // and custom:projects (comma-separated project IDs; empty for master).
+  const [role, setRole] = useState<Role>("field_worker");
+  const [allowedProjectIds, setAllowedProjectIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const session = await fetchAuthSession();
+        const payload = session.tokens?.idToken?.payload ?? {};
+
+        // Cognito may return custom attributes as a single string OR an array.
+        // Normalize both to a plain string.
+        const rawRole = payload["custom:role"];
+        const roleStr = Array.isArray(rawRole) ? rawRole[0] : rawRole;
+        const rawProjects = payload["custom:projects"];
+        const projectsStr = Array.isArray(rawProjects) ? rawProjects[0] : rawProjects;
+
+        if (cancelled) return;
+        setRole((roleStr as Role | undefined) ?? "field_worker");
+        setAllowedProjectIds(
+          ((projectsStr as string) ?? "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        );
+      } catch {
+        // If the session can't be read, default to most-restrictive role.
+        if (!cancelled) setRole("field_worker");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  const [selectedProject, setSelectedProject] = useState<ProjectSummary | null>(null);
   const [points, setPoints] = useState<Schema["Point"]["type"][]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -182,6 +223,7 @@ function App() {
         lng,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         photos: [],
+        projectId: selectedProject?.id ?? undefined,
       });
 
       if (newPoint && createFiles.length > 0) {
@@ -219,8 +261,8 @@ function App() {
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchPoints();
-  }, []);
+    if (selectedProject) fetchPoints();
+  }, [selectedProject]);
 
   useEffect(() => {
     let cancelled = false;
@@ -444,7 +486,9 @@ function App() {
 
   async function fetchPoints() {
     setLoading(true);
-    const { data: items, errors } = await client.models.Point.list();
+    const { data: items, errors } = await client.models.Point.list(
+      selectedProject ? { filter: { projectId: { eq: selectedProject.id } } } : {}
+    );
     if (!errors) setPoints(items);
     setLoading(false);
   }
@@ -510,14 +554,34 @@ function App() {
   // The main map needs a no-op coord change handler since we removed the top form.
   const noopCoordChange = useCallback(() => {}, []);
 
+  // ── Project selection gate ──
+  // Until a project is chosen, show the role-aware project picker instead of the map.
+  if (!selectedProject) {
+    return (
+      <ProjectPicker
+        role={role}
+        allowedProjectIds={allowedProjectIds}
+        userEmail={user?.signInDetails?.loginId ?? ""}
+        onSignOut={signOut}
+        onChoose={setSelectedProject}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <header className="header">
         <div className="header-left">
           <img src="/bai-engineers-logo.png" alt="Bai Engineers" className="header-logo" />
           <h1>Point Tracker</h1>
+          {selectedProject && (
+            <span className="header-project">{selectedProject.name}</span>
+          )}
         </div>
         <div className="header-user">
+          <button className="btn btn-secondary btn-small" onClick={() => setSelectedProject(null)}>
+            Switch project
+          </button>
           <span className="header-email">{user?.signInDetails?.loginId}</span>
           <button className="btn btn-secondary btn-small" onClick={signOut}>
             Sign out
@@ -534,6 +598,8 @@ function App() {
             onCoordChange={noopCoordChange}
             onPointSelect={openDetail}
             focusTarget={focusTarget}
+            center={{ lat: selectedProject.lat, lng: selectedProject.lng }}
+            zoom={selectedProject.zoom ?? undefined}
           />
         </section>
 

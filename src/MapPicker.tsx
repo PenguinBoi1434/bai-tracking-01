@@ -67,7 +67,7 @@ function LocateButton({ onLocate }: { onLocate: (pos: google.maps.LatLngLiteral)
 const BENT_NM = { lat: 33.1581, lng: -105.8572 };
 const DEFAULT_ZOOM = 14;
 /** Default geographic radius (meters) for circle markers when none is supplied. */
-const DEFAULT_RADIUS_M = 25;
+const DEFAULT_RADIUS_M = 8;
 
 export interface PointMarker {
   id: string;
@@ -87,6 +87,10 @@ interface MapPickerProps {
   onMarkerCancel?: () => void;
   onPointSelect?: (id: string) => void;
   focusTarget?: FocusTarget | null;
+  /** Optional map center (e.g. the selected project's location). Falls back to lat/lng or BENT_NM. */
+  center?: google.maps.LatLngLiteral;
+  /** Optional default zoom. Falls back to DEFAULT_ZOOM. */
+  zoom?: number;
 }
 
 /**
@@ -153,13 +157,14 @@ function CircleMarker({
 }
 
 
-export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCancel, onPointSelect, focusTarget }: MapPickerProps) {
+export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCancel, onPointSelect, focusTarget, center, zoom }: MapPickerProps) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 
   const hasExisting = lat !== "" && lng !== "";
   const initialCenter = hasExisting
     ? { lat: parseFloat(lat), lng: parseFloat(lng) }
-    : BENT_NM;
+    : center ?? BENT_NM;
+  const initialZoom = zoom ?? DEFAULT_ZOOM;
 
   const [geoMarker, setGeoMarker] = useState<google.maps.LatLngLiteral | null>(null);
 
@@ -211,7 +216,7 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
         <Map
           mapId="point-tracker-map"
           defaultCenter={initialCenter}
-          defaultZoom={DEFAULT_ZOOM}
+          defaultZoom={initialZoom}
           mapTypeId="satellite"
           gestureHandling="greedy"
           disableDefaultUI={false}
@@ -248,28 +253,18 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
           ))}
 
           {draftVisible && (
-            <>
-              <CircleMarker
-                center={marker!}
-                radius={DEFAULT_RADIUS_M}
-                fillColor="#3b82f6"
-                strokeColor="#1d4ed8"
-                fillOpacity={0.25}
-                strokeWeight={3}
-              />
-              {/* Cancel button overlay — keeps the × clickable above the circle. */}
-              <AdvancedMarker position={marker!}>
-                <button
-                  className="map-draft-cancel"
-                  title="Cancel"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMarker(null);
-                    onMarkerCancel?.();
-                  }}
-                >×</button>
-              </AdvancedMarker>
-            </>
+            <CircleMarker
+              center={marker!}
+              radius={DEFAULT_RADIUS_M}
+              fillColor="#3b82f6"
+              strokeColor="#1d4ed8"
+              fillOpacity={0.25}
+              strokeWeight={3}
+              onClick={() => {
+                setMarker(null);
+                onMarkerCancel?.();
+              }}
+            />
           )}
         </Map>
       </APIProvider>

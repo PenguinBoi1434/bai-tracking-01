@@ -1,6 +1,16 @@
 import { type ClientSchema, a, defineData } from "@aws-amplify/backend";
 
 const schema = a.schema({
+  Project: a
+    .model({
+      name: a.string().required(),
+      lat: a.float().required(),
+      lng: a.float().required(),
+      zoom: a.float(),
+      points: a.hasMany("Point", "projectId"),
+    })
+    .authorization((allow) => [allow.authenticated()]),
+
   Point: a
     .model({
       date: a.string().required(),
@@ -13,6 +23,8 @@ const schema = a.schema({
       timezone: a.string(),
       comments: a.string().array(),
       category: a.string(),
+      projectId: a.id(),
+      project: a.belongsTo("Project", "projectId"),
     })
     .authorization((allow) => [allow.authenticated()]),
 });

@@ -29,6 +29,15 @@
   color: #162447;
 }
 
+.header-project {
+  padding: 0.2rem 0.6rem;
+  background: #eef2ff;
+  color: #1e40af;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 .header-user {
   display: flex;
   align-items: center;

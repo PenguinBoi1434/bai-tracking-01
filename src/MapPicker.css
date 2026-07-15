@@ -86,32 +86,7 @@
 
 /* ── Circle markers ── */
 /* Saved/draft points are rendered as native `google.maps.Circle` overlays
-   (true geographic radius), so they have no CSS here. Only the draft marker's
-   cancel button (an HTML element layered above the circle) needs styling. */
-.map-draft-cancel {
-  position: absolute;
-  top: 0;
-  left: 0;
-  transform: translate(-50%, -50%);
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: none;
-  background: #111;
-  color: #fff;
-  font-size: 0.95rem;
-  line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
-}
-
-.map-draft-cancel:hover {
-  background: #333;
-}
-
+   (true geographic radius). The draft circle is clickable to cancel. */
 @keyframes marker-pulse {
   0%, 100% { transform: translate(-50%, -50%) scale(1); }
   50%      { transform: translate(-50%, -50%) scale(1.3); }
