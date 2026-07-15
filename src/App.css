@@ -262,6 +262,47 @@
   color: #6b7280;
 }
 
+.category-checklist {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.category-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+  background: #fff;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.category-check:hover {
+  border-color: #9ca3af;
+}
+
+.category-check input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.category-check-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.category-check-label {
+  color: #333;
+}
+
 .sort-select {
   padding: 0.4rem 0.65rem;
   border: 1px solid #d1d5db;
