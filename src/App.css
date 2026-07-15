@@ -262,11 +262,64 @@
   color: #6b7280;
 }
 
-.category-checklist {
-  display: flex;
+/* ── Category filter dropdown ── */
+.category-filter {
+  position: relative;
+}
+
+.category-filter-btn {
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.category-filter-badge {
+  background: #1a73e8;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  min-width: 1.1rem;
+  text-align: center;
+}
+
+/* Invisible full-screen layer behind the dropdown — closes on outside click */
+.category-filter-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+}
+
+.category-filter-dropdown {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  z-index: 11;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 180px;
+}
+
+.category-filter-clear {
+  margin-top: 0.25rem;
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: left;
+  text-decoration: underline;
+}
+
+.category-filter-clear:hover {
+  color: #374151;
 }
 
 .category-check {

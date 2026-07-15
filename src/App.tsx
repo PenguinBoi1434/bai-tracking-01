@@ -509,6 +509,7 @@ function App() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set());
+  const [categoryFilterOpen, setCategoryFilterOpen] = useState(false);
 
   // Filtering only — the single source of truth for "which points pass."
   // Consumed by both the list (after sorting) and the main map.
@@ -651,44 +652,69 @@ function App() {
                 onChange={(e) => setDateTo(e.target.value)}
               />
             </div>
-            <div className="category-checklist">
-              {CATEGORIES.map((c) => {
-                const checked = activeCategories.has(c.name);
-                return (
-                  <label key={c.name} className="category-check" style={{ borderColor: checked ? c.color : undefined }}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => {
-                        setActiveCategories((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(c.name)) next.delete(c.name);
-                          else next.add(c.name);
-                          return next;
-                        });
-                      }}
-                    />
-                    <span className="category-check-dot" style={{ background: c.color }} />
-                    <span className="category-check-label">{c.name}</span>
-                  </label>
-                );
-              })}
-              <label className="category-check" style={{ borderColor: activeCategories.has("__none__") ? DEFAULT_CATEGORY_COLOR : undefined }}>
-                <input
-                  type="checkbox"
-                  checked={activeCategories.has("__none__")}
-                  onChange={() => {
-                    setActiveCategories((prev) => {
-                      const next = new Set(prev);
-                      if (next.has("__none__")) next.delete("__none__");
-                      else next.add("__none__");
-                      return next;
-                    });
-                  }}
-                />
-                <span className="category-check-dot" style={{ background: DEFAULT_CATEGORY_COLOR }} />
-                <span className="category-check-label">Uncategorized</span>
-              </label>
+            <div className="category-filter">
+              <button
+                className="btn btn-secondary btn-small category-filter-btn"
+                onClick={() => setCategoryFilterOpen((v) => !v)}
+              >
+                Filter Categories
+                {activeCategories.size > 0 && (
+                  <span className="category-filter-badge">{activeCategories.size}</span>
+                )}
+              </button>
+
+              {categoryFilterOpen && (
+                <>
+                  <div className="category-filter-overlay" onClick={() => setCategoryFilterOpen(false)} />
+                  <div className="category-filter-dropdown">
+                    {CATEGORIES.map((c) => {
+                      const checked = activeCategories.has(c.name);
+                      return (
+                        <label key={c.name} className="category-check" style={{ borderColor: checked ? c.color : undefined }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setActiveCategories((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(c.name)) next.delete(c.name);
+                                else next.add(c.name);
+                                return next;
+                              });
+                            }}
+                          />
+                          <span className="category-check-dot" style={{ background: c.color }} />
+                          <span className="category-check-label">{c.name}</span>
+                        </label>
+                      );
+                    })}
+                    <label className="category-check" style={{ borderColor: activeCategories.has("__none__") ? DEFAULT_CATEGORY_COLOR : undefined }}>
+                      <input
+                        type="checkbox"
+                        checked={activeCategories.has("__none__")}
+                        onChange={() => {
+                          setActiveCategories((prev) => {
+                            const next = new Set(prev);
+                            if (next.has("__none__")) next.delete("__none__");
+                            else next.add("__none__");
+                            return next;
+                          });
+                        }}
+                      />
+                      <span className="category-check-dot" style={{ background: DEFAULT_CATEGORY_COLOR }} />
+                      <span className="category-check-label">Uncategorized</span>
+                    </label>
+                    {activeCategories.size > 0 && (
+                      <button
+                        className="category-filter-clear"
+                        onClick={() => setActiveCategories(new Set())}
+                      >
+                        Clear all
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
             {(searchName || dateFrom || dateTo || activeCategories.size > 0) && (
               <button
