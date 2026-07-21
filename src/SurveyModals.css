@@ -1,0 +1,90 @@
+.survey-modal {
+  max-width: 560px;
+}
+
+.survey-modal .attr-window-header p {
+  margin: 0.2rem 0 0;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.survey-modal select {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}
+
+.survey-notice {
+  padding: 0.75rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.survey-system-summary {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.survey-system-summary span {
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.survey-confirm {
+  flex-direction: row !important;
+  align-items: flex-start;
+  gap: 0.55rem !important;
+  line-height: 1.4;
+}
+
+.survey-confirm input {
+  margin-top: 0.18rem;
+}
+
+.survey-export-facts {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.8rem;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.survey-export-facts div {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+}
+
+.survey-export-facts span { color: #64748b; }
+.survey-export-facts strong { color: #1f2937; }
+
+.export-help {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.survey-error {
+  padding: 0.7rem;
+  border-radius: 7px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 0.84rem;
+}
+
+@media (max-width: 560px) {
+  .survey-export-facts div { grid-template-columns: 1fr; gap: 0.1rem; }
+}

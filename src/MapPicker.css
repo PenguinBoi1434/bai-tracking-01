@@ -52,6 +52,64 @@
   cursor: wait;
 }
 
+/* ── Select-area button (rectangle selection) ── */
+.map-select-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: 10px 10px 0;
+  background: #fff;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+
+.map-select-btn:hover {
+  background: #ebebeb;
+}
+
+.map-select-btn.active {
+  background: #1a73e8;
+}
+
+.map-select-btn.active:hover {
+  background: #1557b0;
+}
+
+.map-selection-hint {
+  margin-top: 10px;
+  padding: 0.55rem 0.8rem;
+  border-radius: 6px;
+  background: rgba(17, 24, 39, 0.92);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  pointer-events: none;
+}
+
+.map-selection-capture {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.map-selection-drag-box {
+  display: none;
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #1a73e8;
+  background: rgba(26, 115, 232, 0.22);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.65) inset;
+  pointer-events: none;
+}
+
 /* ── Draft balloon marker ── */
 .map-balloon {
   position: relative;

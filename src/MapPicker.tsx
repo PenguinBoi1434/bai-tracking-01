@@ -64,6 +64,27 @@ function LocateButton({ onLocate }: { onLocate: (pos: google.maps.LatLngLiteral)
   );
 }
 
+function SelectAreaButton({ active, onToggle }: { active: boolean; onToggle: () => void }) {
+  return (
+    <MapControl position={ControlPosition.RIGHT_TOP}>
+      <button
+        className={active ? "map-select-btn active" : "map-select-btn"}
+        onClick={onToggle}
+        title={active ? "Finish area selection" : "Select points by area"}
+        aria-label="Select points by area"
+        aria-pressed={active}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={active ? "#fff" : "#1a73e8"} strokeWidth="2" strokeLinecap="square" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 8V5a1 1 0 0 1 1-1h3" />
+          <path d="M16 4h3a1 1 0 0 1 1 1v3" />
+          <path d="M20 16v3a1 1 0 0 1-1 1h-3" />
+          <path d="M8 20H5a1 1 0 0 1-1-1v-3" />
+        </svg>
+      </button>
+    </MapControl>
+  );
+}
+
 const BENT_NM = { lat: 33.1581, lng: -105.8572 };
 const DEFAULT_ZOOM = 14;
 /** Default geographic radius (meters) for circle markers when none is supplied. */
@@ -91,6 +112,14 @@ interface MapPickerProps {
   center?: google.maps.LatLngLiteral;
   /** Optional default zoom. Falls back to DEFAULT_ZOOM. */
   zoom?: number;
+  /** Enables two-corner rectangle selection instead of point placement. */
+  selectionMode?: boolean;
+  selectedPointIds?: Set<string>;
+  onSelectionChange?: (ids: string[]) => void;
+  onPointToggle?: (id: string) => void;
+  onToggleSelectionMode?: () => void;
+  clearSelectionNonce?: number;
+  allowPointPlacement?: boolean;
 }
 
 /**
@@ -156,8 +185,190 @@ function CircleMarker({
   return null;
 }
 
+function SelectionRectangle({ bounds }: { bounds: google.maps.LatLngBoundsLiteral | null }) {
+  const map = useMap();
+  const rectangleRef = useRef<google.maps.Rectangle | null>(null);
 
-export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCancel, onPointSelect, focusTarget, center, zoom }: MapPickerProps) {
+  useEffect(() => {
+    if (!map) return;
+    const rectangle = new google.maps.Rectangle({
+      map,
+      clickable: false,
+      fillColor: "#1a73e8",
+      fillOpacity: 0.12,
+      strokeColor: "#1a73e8",
+      strokeOpacity: 0.95,
+      strokeWeight: 2,
+    });
+    rectangleRef.current = rectangle;
+    return () => rectangle.setMap(null);
+  }, [map]);
+
+  useEffect(() => {
+    const rectangle = rectangleRef.current;
+    if (!rectangle) return;
+    rectangle.setBounds(bounds);
+    rectangle.setVisible(!!bounds);
+  }, [bounds]);
+
+  return null;
+}
+
+function SelectionHint() {
+  return (
+    <MapControl position={ControlPosition.TOP_CENTER}>
+      <div className="map-selection-hint">
+        Drag on the map to draw a selection rectangle
+      </div>
+    </MapControl>
+  );
+}
+
+function DragAreaSelector({
+  points,
+  onSelectionChange,
+  onBoundsChange,
+}: {
+  points: PointMarker[];
+  onSelectionChange?: (ids: string[]) => void;
+  onBoundsChange: (bounds: google.maps.LatLngBoundsLiteral) => void;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+
+    const projectionOverlay = new google.maps.OverlayView();
+    projectionOverlay.onAdd = () => {};
+    projectionOverlay.draw = () => {};
+    projectionOverlay.onRemove = () => {};
+    projectionOverlay.setMap(map);
+
+    const capture = document.createElement("div");
+    capture.className = "map-selection-capture";
+    capture.setAttribute("aria-label", "Drag to select points on the map");
+    const box = document.createElement("div");
+    box.className = "map-selection-drag-box";
+    capture.appendChild(box);
+    map.getDiv().appendChild(capture);
+
+    let pointerId: number | null = null;
+    let startX = 0;
+    let startY = 0;
+
+    const localPoint = (event: PointerEvent) => {
+      const rect = capture.getBoundingClientRect();
+      return {
+        x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
+        y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)),
+      };
+    };
+
+    const drawBox = (x: number, y: number) => {
+      const left = Math.min(startX, x);
+      const top = Math.min(startY, y);
+      box.style.display = "block";
+      box.style.left = `${left}px`;
+      box.style.top = `${top}px`;
+      box.style.width = `${Math.abs(x - startX)}px`;
+      box.style.height = `${Math.abs(y - startY)}px`;
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0 && event.pointerType === "mouse") return;
+      event.preventDefault();
+      event.stopPropagation();
+      const point = localPoint(event);
+      pointerId = event.pointerId;
+      startX = point.x;
+      startY = point.y;
+      capture.setPointerCapture(event.pointerId);
+      drawBox(point.x, point.y);
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (pointerId !== event.pointerId) return;
+      event.preventDefault();
+      const point = localPoint(event);
+      drawBox(point.x, point.y);
+    };
+
+    const finishSelection = (event: PointerEvent) => {
+      if (pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const point = localPoint(event);
+      const left = Math.min(startX, point.x);
+      const right = Math.max(startX, point.x);
+      const top = Math.min(startY, point.y);
+      const bottom = Math.max(startY, point.y);
+      box.style.display = "none";
+      pointerId = null;
+
+      if (right - left < 5 || bottom - top < 5) return;
+      const projection = projectionOverlay.getProjection();
+      if (!projection) return;
+      const northWest = projection.fromContainerPixelToLatLng(new google.maps.Point(left, top));
+      const southEast = projection.fromContainerPixelToLatLng(new google.maps.Point(right, bottom));
+      if (!northWest || !southEast) return;
+      const bounds = {
+        north: northWest.lat(),
+        west: northWest.lng(),
+        south: southEast.lat(),
+        east: southEast.lng(),
+      };
+      onBoundsChange(bounds);
+      onSelectionChange?.(
+        points.filter((pointMarker) =>
+          pointMarker.lat >= bounds.south && pointMarker.lat <= bounds.north &&
+          pointMarker.lng >= bounds.west && pointMarker.lng <= bounds.east
+        ).map((pointMarker) => pointMarker.id)
+      );
+    };
+
+    const cancelSelection = (event: PointerEvent) => {
+      if (pointerId !== event.pointerId) return;
+      box.style.display = "none";
+      pointerId = null;
+    };
+
+    capture.addEventListener("pointerdown", onPointerDown);
+    capture.addEventListener("pointermove", onPointerMove);
+    capture.addEventListener("pointerup", finishSelection);
+    capture.addEventListener("pointercancel", cancelSelection);
+
+    return () => {
+      capture.removeEventListener("pointerdown", onPointerDown);
+      capture.removeEventListener("pointermove", onPointerMove);
+      capture.removeEventListener("pointerup", finishSelection);
+      capture.removeEventListener("pointercancel", cancelSelection);
+      capture.remove();
+      projectionOverlay.setMap(null);
+    };
+  }, [map, points, onSelectionChange, onBoundsChange]);
+
+  return null;
+}
+
+
+export default function MapPicker({
+  lat,
+  lng,
+  points,
+  onCoordChange,
+  onMarkerCancel,
+  onPointSelect,
+  focusTarget,
+  center,
+  zoom,
+  selectionMode = false,
+  selectedPointIds = new Set<string>(),
+  onSelectionChange,
+  onPointToggle,
+  onToggleSelectionMode,
+  clearSelectionNonce = 0,
+  allowPointPlacement = true,
+}: MapPickerProps) {
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 
   const hasExisting = lat !== "" && lng !== "";
@@ -171,6 +382,15 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
   const [marker, setMarker] = useState<google.maps.LatLngLiteral | null>(
     hasExisting ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null
   );
+  const [selectionBounds, setSelectionBounds] = useState<google.maps.LatLngBoundsLiteral | null>(null);
+
+  useEffect(() => {
+    if (!selectionMode) setSelectionBounds(null);
+  }, [selectionMode]);
+
+  useEffect(() => {
+    setSelectionBounds(null);
+  }, [clearSelectionNonce]);
 
   const handleMapClick = useCallback(
     (ev: MapMouseEvent) => {
@@ -178,10 +398,12 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
       if (!clicked) return;
       const newLat = clicked.lat;
       const newLng = clicked.lng;
+      if (selectionMode) return;
+      if (!allowPointPlacement) return;
       setMarker({ lat: newLat, lng: newLng });
       onCoordChange(newLat.toFixed(6), newLng.toFixed(6));
     },
-    [onCoordChange]
+    [selectionMode, allowPointPlacement, onCoordChange]
   );
 
   const draftVisible = useMemo(
@@ -224,6 +446,20 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
         >
           <MapFocuser target={focusTarget ?? null} />
           <LocateButton onLocate={(pos) => setGeoMarker(pos)} />
+          {onToggleSelectionMode && (
+            <SelectAreaButton active={selectionMode} onToggle={onToggleSelectionMode} />
+          )}
+          {selectionMode && (
+            <>
+              <SelectionHint />
+              <DragAreaSelector
+                points={points}
+                onSelectionChange={onSelectionChange}
+                onBoundsChange={setSelectionBounds}
+              />
+            </>
+          )}
+          <SelectionRectangle bounds={selectionBounds} />
 
           {geoMarker && (
             <AdvancedMarker position={geoMarker}>
@@ -246,9 +482,11 @@ export default function MapPicker({ lat, lng, points, onCoordChange, onMarkerCan
               key={p.id}
               center={{ lat: p.lat, lng: p.lng }}
               radius={p.radius ?? DEFAULT_RADIUS_M}
-              fillColor={p.color ?? "#e11d48"}
-              strokeColor={p.color ?? "#b91c1c"}
-              onClick={() => onPointSelect?.(p.id)}
+              fillColor={selectedPointIds.has(p.id) ? "#22c55e" : (p.color ?? "#e11d48")}
+              strokeColor={selectedPointIds.has(p.id) ? "#14532d" : (p.color ?? "#b91c1c")}
+              fillOpacity={selectedPointIds.has(p.id) ? 0.8 : 0.5}
+              strokeWeight={selectedPointIds.has(p.id) ? 4 : 2}
+              onClick={() => selectionMode ? onPointToggle?.(p.id) : onPointSelect?.(p.id)}
             />
           ))}
 

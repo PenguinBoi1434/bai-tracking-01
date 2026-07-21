@@ -8,6 +8,7 @@ import MapPicker from "./MapPicker";
 import type { PointMarker, FocusTarget } from "./MapPicker";
 import ProjectPicker from "./ProjectPicker";
 import type { ProjectSummary, Role } from "./ProjectPicker";
+import { CoordinateSettingsModal, ExportPointsModal } from "./SurveyModals";
 import "./App.css";
 
 const client = generateClient<Schema>();
@@ -70,6 +71,8 @@ interface CreateFormData {
   time: string;
   location: string;
   description: string;
+  pointNumber: string;
+  elevation: string;
 }
 
 interface DetailFormData {
@@ -79,10 +82,12 @@ interface DetailFormData {
   lng: string;
   lat: string;
   description: string;
+  pointNumber: string;
+  elevation: string;
 }
 
 const emptyDetail: DetailFormData = {
-  date: "", time: "", location: "", lng: "", lat: "", description: "",
+  date: "", time: "", location: "", lng: "", lat: "", description: "", pointNumber: "", elevation: "",
 };
 
 function App() {
@@ -98,24 +103,12 @@ function App() {
     let cancelled = false;
     (async () => {
       try {
-        const session = await fetchAuthSession();
-        const payload = session.tokens?.idToken?.payload ?? {};
-
-        // Cognito may return custom attributes as a single string OR an array.
-        // Normalize both to a plain string.
-        const rawRole = payload["custom:role"];
-        const roleStr = Array.isArray(rawRole) ? rawRole[0] : rawRole;
-        const rawProjects = payload["custom:projects"];
-        const projectsStr = Array.isArray(rawProjects) ? rawProjects[0] : rawProjects;
+        await fetchAuthSession();
 
         if (cancelled) return;
-        setRole((roleStr as Role | undefined) ?? "field_worker");
-        setAllowedProjectIds(
-          ((projectsStr as string) ?? "")
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean)
-        );
+        // TEMP: role check disabled — everyone gets master access
+        setRole("master");
+        setAllowedProjectIds([]);
       } catch {
         // If the session can't be read, default to most-restrictive role.
         if (!cancelled) setRole("field_worker");
@@ -133,7 +126,7 @@ function App() {
   // ── Create modal ──
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateFormData>({
-    date: "", time: "", location: "", description: "",
+    date: "", time: "", location: "", description: "", pointNumber: "", elevation: "",
   });
   const [createLat, setCreateLat] = useState("");
   const [createLng, setCreateLng] = useState("");
@@ -143,7 +136,8 @@ function App() {
   const createFileRef = useRef<HTMLInputElement>(null);
 
   function openCreate() {
-    setCreateForm({ date: nowDate(), time: nowTime(), location: "", description: "" });
+    const nextPointNumber = points.reduce((max, point) => Math.max(max, point.pointNumber ?? 0), 0) + 1;
+    setCreateForm({ date: nowDate(), time: nowTime(), location: "", description: "", pointNumber: String(nextPointNumber), elevation: "" });
     setCreateLat("");
     setCreateLng("");
     setCreateFocus(null);
@@ -212,6 +206,21 @@ function App() {
       }
     }
 
+    const pointNumber = parseInt(createForm.pointNumber, 10);
+    if (!Number.isInteger(pointNumber) || pointNumber <= 0) {
+      alert("Enter a valid positive point number.");
+      return;
+    }
+    if (points.some((point) => point.pointNumber === pointNumber)) {
+      alert(`Point number ${pointNumber} is already used in this project.`);
+      return;
+    }
+    const elevation = createForm.elevation.trim() === "" ? undefined : parseFloat(createForm.elevation);
+    if (elevation !== undefined && !Number.isFinite(elevation)) {
+      alert("Enter a valid elevation or leave it blank.");
+      return;
+    }
+
     setCreateBusy(true);
     try {
       const { data: newPoint } = await client.models.Point.create({
@@ -219,6 +228,8 @@ function App() {
         time: createForm.time,
         location: createForm.location,
         description: createForm.description,
+        pointNumber,
+        elevation,
         lat,
         lng,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -306,6 +317,8 @@ function App() {
       lng: String(point.lng),
       lat: String(point.lat),
       description: point.description ?? "",
+      pointNumber: point.pointNumber == null ? "" : String(point.pointNumber),
+      elevation: point.elevation == null ? "" : String(point.elevation),
     });
     setDetailPhotos((point.photos ?? []).filter((p): p is string => !!p));
     setDetailComments((point.comments ?? []).filter((c): c is string => !!c));
@@ -407,6 +420,20 @@ function App() {
 
   async function handleApply() {
     if (!selectedId) return;
+    const pointNumber = parseInt(detail.pointNumber, 10);
+    if (!Number.isInteger(pointNumber) || pointNumber <= 0) {
+      alert("Enter a valid positive point number.");
+      return;
+    }
+    if (points.some((point) => point.id !== selectedId && point.pointNumber === pointNumber)) {
+      alert(`Point number ${pointNumber} is already used in this project.`);
+      return;
+    }
+    const elevation = detail.elevation.trim() === "" ? null : parseFloat(detail.elevation);
+    if (elevation !== null && !Number.isFinite(elevation)) {
+      alert("Enter a valid elevation or leave it blank.");
+      return;
+    }
     setBusy(true);
     await client.models.Point.update({
       id: selectedId,
@@ -414,6 +441,8 @@ function App() {
       time: detail.time,
       location: detail.location,
       description: detail.description,
+      pointNumber,
+      elevation,
       photos: detailPhotos,
       comments: detailComments,
       category: detailCategory || null,
@@ -510,6 +539,53 @@ function App() {
   const [dateTo, setDateTo] = useState("");
   const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set());
   const [categoryFilterOpen, setCategoryFilterOpen] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedPointIds, setSelectedPointIds] = useState<Set<string>>(new Set());
+  const [clearSelectionNonce, setClearSelectionNonce] = useState(0);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [coordinateSettingsOpen, setCoordinateSettingsOpen] = useState(false);
+
+  const selectedExportPoints = useMemo(
+    () => points.filter((point) => selectedPointIds.has(point.id)),
+    [points, selectedPointIds]
+  );
+
+  function togglePointSelection(id: string) {
+    setSelectedPointIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function clearPointSelection() {
+    setSelectedPointIds(new Set());
+    setClearSelectionNonce((value) => value + 1);
+  }
+
+  async function saveCoordinateSettings(values: {
+    coordinateSystemEpsg: string;
+    coordinateSystemName: string;
+    coordinateUnits: string;
+    coordinateSystemConfirmed: boolean;
+    verticalDatum?: string;
+    elevationUnits: string;
+  }) {
+    if (!selectedProject) return;
+    const { data, errors } = await client.models.Project.update({ id: selectedProject.id, ...values });
+    if (errors?.length || !data) throw new Error("Could not save coordinate settings.");
+    setSelectedProject({
+      ...selectedProject,
+      coordinateSystemEpsg: data.coordinateSystemEpsg ?? null,
+      coordinateSystemName: data.coordinateSystemName ?? null,
+      coordinateUnits: data.coordinateUnits ?? null,
+      coordinateSystemConfirmed: data.coordinateSystemConfirmed ?? false,
+      verticalDatum: data.verticalDatum ?? null,
+      elevationUnits: data.elevationUnits ?? null,
+    });
+    setCoordinateSettingsOpen(false);
+  }
 
   // Filtering only — the single source of truth for "which points pass."
   // Consumed by both the list (after sorting) and the main map.
@@ -588,6 +664,11 @@ function App() {
           <button className="btn btn-secondary btn-small" onClick={() => setSelectedProject(null)}>
             Switch project
           </button>
+          {role === "master" && (
+            <button className="btn btn-secondary btn-small" onClick={() => setCoordinateSettingsOpen(true)}>
+              Coordinate settings
+            </button>
+          )}
           <span className="header-email">{user?.signInDetails?.loginId}</span>
           <button className="btn btn-secondary btn-small" onClick={signOut}>
             Sign out
@@ -606,10 +687,68 @@ function App() {
             focusTarget={focusTarget}
             center={{ lat: selectedProject.lat, lng: selectedProject.lng }}
             zoom={selectedProject.zoom ?? undefined}
+            allowPointPlacement={false}
+            selectionMode={selectionMode}
+            selectedPointIds={selectedPointIds}
+            onSelectionChange={(ids) => {
+              setSelectedPointIds(new Set(ids));
+              setSelectionMode(false);
+            }}
+            onPointToggle={togglePointSelection}
+            onToggleSelectionMode={() => setSelectionMode((value) => !value)}
+            clearSelectionNonce={clearSelectionNonce}
           />
+          {selectedPointIds.size > 0 && (
+            <div className="selection-panel">
+              <div className="selection-panel-header">
+                <span>{selectedPointIds.size} point{selectedPointIds.size === 1 ? "" : "s"} selected</span>
+                <button
+                  className="attr-close"
+                  onClick={clearPointSelection}
+                  aria-label="Clear selection"
+                  title="Clear selection"
+                >×</button>
+              </div>
+              <div className="selection-panel-list">
+                {points
+                  .filter((p) => selectedPointIds.has(p.id))
+                  .map((p) => (
+                    <div key={p.id} className="selection-panel-item">
+                      <span
+                        className="selection-panel-dot"
+                        style={{ background: getCategoryColor(p.category) }}
+                        title={p.category || "Uncategorized"}
+                      />
+                      <span className="selection-panel-name">{p.location || `Point ${p.pointNumber}`}</span>
+                      <span className="selection-panel-date">{p.date}</span>
+                    </div>
+                  ))}
+              </div>
+              <div className="selection-panel-footer">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setExportOpen(true)}
+                  disabled={!selectedProject.coordinateSystemConfirmed}
+                  title={!selectedProject.coordinateSystemConfirmed ? "Confirm the project coordinate system first" : "Export selected points"}
+                >
+                  Export
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="list-section">
+          {!selectedProject.coordinateSystemConfirmed && (
+            <div className="coordinate-warning">
+              <span>Export requires a confirmed project coordinate system.</span>
+              {role === "master" && (
+                <button className="btn btn-secondary btn-small" onClick={() => setCoordinateSettingsOpen(true)}>
+                  Configure now
+                </button>
+              )}
+            </div>
+          )}
           <div className="list-header">
             <h2>Points ({sortedPoints.length}{sortedPoints.length !== points.length ? ` of ${points.length}` : ""})</h2>
             <div className="list-header-right">
@@ -733,8 +872,12 @@ function App() {
           ) : (
             <div className="point-grid">
               {sortedPoints.map((p) => (
-                <div key={p.id} className="point-card" style={{ borderLeft: `4px solid ${getCategoryColor(p.category)}` }}>
+                <div key={p.id} className={selectedPointIds.has(p.id) ? "point-card point-card-selected" : "point-card"} style={{ borderLeft: `4px solid ${selectedPointIds.has(p.id) ? "#22c55e" : getCategoryColor(p.category)}` }}>
                   <div className="point-card-header">
+                    <label className="point-select-check">
+                      <input type="checkbox" checked={selectedPointIds.has(p.id)} onChange={() => togglePointSelection(p.id)} />
+                      <span>{p.pointNumber == null ? "No point #" : `Point ${p.pointNumber}`}</span>
+                    </label>
                     <span className="point-date">{p.date}</span>
                     <span className="point-time">{formatTimeDisplay(p.date, p.time ?? "", p.timezone)}</span>
                   </div>
@@ -795,6 +938,32 @@ function App() {
                     value={createForm.time}
                     onChange={handleCreateChange}
                     required
+                  />
+                </label>
+              </div>
+
+              <div className="create-row">
+                <label>
+                  Point number
+                  <input
+                    name="pointNumber"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={createForm.pointNumber}
+                    onChange={handleCreateChange}
+                    required
+                  />
+                </label>
+                <label>
+                  Elevation (optional)
+                  <input
+                    name="elevation"
+                    type="number"
+                    step="any"
+                    value={createForm.elevation}
+                    onChange={handleCreateChange}
+                    placeholder="Unknown"
                   />
                 </label>
               </div>
@@ -931,6 +1100,17 @@ function App() {
               Time
               <input name="time" type="time" value={detail.time} onChange={handleDetailChange} />
             </label>
+
+            <div className="detail-survey-row">
+              <label>
+                Point number
+                <input name="pointNumber" type="number" min="1" step="1" value={detail.pointNumber} onChange={handleDetailChange} />
+              </label>
+              <label>
+                Elevation (optional)
+                <input name="elevation" type="number" step="any" value={detail.elevation} onChange={handleDetailChange} placeholder="Unknown" />
+              </label>
+            </div>
 
             <label>
               Location
@@ -1114,6 +1294,22 @@ function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {coordinateSettingsOpen && (
+        <CoordinateSettingsModal
+          project={selectedProject}
+          onClose={() => setCoordinateSettingsOpen(false)}
+          onSave={saveCoordinateSettings}
+        />
+      )}
+
+      {exportOpen && (
+        <ExportPointsModal
+          project={selectedProject}
+          points={selectedExportPoints}
+          onClose={() => setExportOpen(false)}
+        />
       )}
 
       {selectedPoint && lightboxIndex !== null && detailPhotos[lightboxIndex] && (

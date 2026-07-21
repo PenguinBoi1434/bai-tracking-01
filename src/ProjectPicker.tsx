@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../amplify/data/resource";
 import MapPicker from "./MapPicker";
+import { coordinateOptionsForLocation, unitsLabel } from "./survey";
 import "./ProjectPicker.css";
 
 const client = generateClient<Schema>();
@@ -14,6 +15,12 @@ export interface ProjectSummary {
   lat: number;
   lng: number;
   zoom: number | null;
+  coordinateSystemEpsg: string | null;
+  coordinateSystemName: string | null;
+  coordinateUnits: string | null;
+  coordinateSystemConfirmed: boolean;
+  verticalDatum: string | null;
+  elevationUnits: string | null;
 }
 
 interface ProjectPickerProps {
@@ -36,6 +43,10 @@ export default function ProjectPicker({ role, allowedProjectIds, userEmail, onSi
   const [createName, setCreateName] = useState("");
   const [createLat, setCreateLat] = useState("");
   const [createLng, setCreateLng] = useState("");
+  const [createEpsg, setCreateEpsg] = useState("");
+  const [createCoordinateConfirmed, setCreateCoordinateConfirmed] = useState(false);
+  const [createVerticalDatum, setCreateVerticalDatum] = useState("");
+  const [createElevationUnits, setCreateElevationUnits] = useState("us-ft");
   const [createBusy, setCreateBusy] = useState(false);
 
   async function fetchProjects() {
@@ -57,6 +68,12 @@ export default function ProjectPicker({ role, allowedProjectIds, userEmail, onSi
       lat: p.lat,
       lng: p.lng,
       zoom: p.zoom ?? null,
+      coordinateSystemEpsg: p.coordinateSystemEpsg ?? null,
+      coordinateSystemName: p.coordinateSystemName ?? null,
+      coordinateUnits: p.coordinateUnits ?? null,
+      coordinateSystemConfirmed: p.coordinateSystemConfirmed ?? false,
+      verticalDatum: p.verticalDatum ?? null,
+      elevationUnits: p.elevationUnits ?? null,
     }));
     if (role === "master") return mapped;
     return mapped.filter((p) => allowedProjectIds.includes(p.id));
@@ -65,27 +82,46 @@ export default function ProjectPicker({ role, allowedProjectIds, userEmail, onSi
   function handleCreateCoordChange(lat: string, lng: string) {
     setCreateLat(lat);
     setCreateLng(lng);
+    const options = coordinateOptionsForLocation(parseFloat(lat), parseFloat(lng));
+    setCreateEpsg(options.find((option) => option.recommended)?.epsg ?? options[0]?.epsg ?? "");
+    setCreateCoordinateConfirmed(false);
   }
 
   async function handleCreateSubmit() {
     if (!createName.trim() || !createLat || !createLng) return;
     setCreateBusy(true);
     try {
+      const coordinateOptions = coordinateOptionsForLocation(parseFloat(createLat), parseFloat(createLng));
+      const coordinateSystem = coordinateOptions.find((option) => option.epsg === createEpsg);
+      if (!coordinateSystem || !createCoordinateConfirmed) return;
       await client.models.Project.create({
         name: createName.trim(),
         lat: parseFloat(createLat),
         lng: parseFloat(createLng),
         zoom: DEFAULT_PROJECT_ZOOM,
+        coordinateSystemEpsg: coordinateSystem.epsg,
+        coordinateSystemName: coordinateSystem.name,
+        coordinateUnits: coordinateSystem.units,
+        coordinateSystemConfirmed: true,
+        verticalDatum: createVerticalDatum.trim() || undefined,
+        elevationUnits: createElevationUnits,
       });
       setCreateOpen(false);
       setCreateName("");
       setCreateLat("");
       setCreateLng("");
+      setCreateEpsg("");
+      setCreateCoordinateConfirmed(false);
+      setCreateVerticalDatum("");
       await fetchProjects();
     } finally {
       setCreateBusy(false);
     }
   }
+
+  const createCoordinateOptions = createLat && createLng
+    ? coordinateOptionsForLocation(parseFloat(createLat), parseFloat(createLng))
+    : [];
 
   return (
     <div className="project-picker">
@@ -133,6 +169,9 @@ export default function ProjectPicker({ role, allowedProjectIds, userEmail, onSi
                 <div className="project-card-coords">
                   {p.lat.toFixed(4)}, {p.lng.toFixed(4)}
                 </div>
+                <div className={p.coordinateSystemConfirmed ? "project-card-system" : "project-card-system project-card-system-missing"}>
+                  {p.coordinateSystemConfirmed ? `EPSG:${p.coordinateSystemEpsg}` : "Coordinate system required"}
+                </div>
               </button>
             ))}
           </div>
@@ -167,6 +206,50 @@ export default function ProjectPicker({ role, allowedProjectIds, userEmail, onSi
                 ? `Center: ${createLat}, ${createLng}`
                 : "Click the map to set the project's center."}
             </p>
+            {createCoordinateOptions.length > 0 && (
+              <div className="project-coordinate-setup">
+                <label>
+                  Recommended coordinate system
+                  <select
+                    value={createEpsg}
+                    onChange={(e) => { setCreateEpsg(e.target.value); setCreateCoordinateConfirmed(false); }}
+                  >
+                    {createCoordinateOptions.map((option) => (
+                      <option key={option.epsg} value={option.epsg}>
+                        {option.recommended ? "Recommended — " : ""}{option.name} (EPSG:{option.epsg})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="project-create-hint">
+                  Units: {unitsLabel(createCoordinateOptions.find((option) => option.epsg === createEpsg)?.units)}
+                </p>
+                <label>
+                  Vertical datum (optional)
+                  <input
+                    type="text"
+                    value={createVerticalDatum}
+                    onChange={(e) => setCreateVerticalDatum(e.target.value)}
+                    placeholder="e.g. NAVD88"
+                  />
+                </label>
+                <label>
+                  Elevation units
+                  <select value={createElevationUnits} onChange={(e) => setCreateElevationUnits(e.target.value)}>
+                    <option value="us-ft">US survey feet</option>
+                    <option value="m">Meters</option>
+                  </select>
+                </label>
+                <label className="project-coordinate-confirm">
+                  <input
+                    type="checkbox"
+                    checked={createCoordinateConfirmed}
+                    onChange={(e) => setCreateCoordinateConfirmed(e.target.checked)}
+                  />
+                  I confirm this is the coordinate system used by the project drawing.
+                </label>
+              </div>
+            )}
             <div className="attr-actions">
               <button className="btn btn-secondary" onClick={() => setCreateOpen(false)} disabled={createBusy}>
                 Cancel
@@ -174,7 +257,7 @@ export default function ProjectPicker({ role, allowedProjectIds, userEmail, onSi
               <button
                 className="btn btn-primary"
                 onClick={handleCreateSubmit}
-                disabled={createBusy || !createName.trim() || !createLat || !createLng}
+                disabled={createBusy || !createName.trim() || !createLat || !createLng || !createCoordinateConfirmed}
               >
                 {createBusy ? "Creating…" : "Create project"}
               </button>
