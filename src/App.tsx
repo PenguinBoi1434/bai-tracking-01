@@ -546,7 +546,20 @@ function App() {
   const [coordinateSettingsOpen, setCoordinateSettingsOpen] = useState(false);
 
   const selectedExportPoints = useMemo(
-    () => points.filter((point) => selectedPointIds.has(point.id)),
+    () =>
+      points
+        .filter((point) => selectedPointIds.has(point.id))
+        .map((point) => ({
+          id: point.id,
+          date: point.date,
+          location: point.location ?? null,
+          description: point.description ?? null,
+          lat: point.lat,
+          lng: point.lng,
+          pointNumber: point.pointNumber ?? null,
+          elevation: point.elevation ?? null,
+          photoKeys: (point.photos ?? []).filter((key): key is string => !!key),
+        })),
     [points, selectedPointIds]
   );
 

@@ -27,7 +27,7 @@ function MapFocuser({ target }: { target: FocusTarget | null }) {
   return null;
 }
 
-function LocateButton({ onLocate }: { onLocate: (pos: google.maps.LatLngLiteral) => void }) {
+function LocateButton({ onLocate }: { onLocate: (pos: google.maps.LatLngLiteral, accuracy: number) => void }) {
   const map = useMap();
   const [busy, setBusy] = useState(false);
 
@@ -37,9 +37,10 @@ function LocateButton({ onLocate }: { onLocate: (pos: google.maps.LatLngLiteral)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const accuracy = Number.isFinite(pos.coords.accuracy) ? pos.coords.accuracy : 0;
         map.panTo(loc);
         map.setZoom(18);
-        onLocate(loc);
+        onLocate(loc, accuracy);
         setBusy(false);
       },
       () => {
@@ -137,6 +138,7 @@ function CircleMarker({
   strokeColor,
   fillOpacity = 0.5,
   strokeWeight = 2,
+  clickable = true,
   onClick,
 }: {
   center: google.maps.LatLngLiteral;
@@ -145,6 +147,7 @@ function CircleMarker({
   strokeColor: string;
   fillOpacity?: number;
   strokeWeight?: number;
+  clickable?: boolean;
   onClick?: () => void;
 }) {
   const map = useMap();
@@ -171,8 +174,9 @@ function CircleMarker({
       strokeColor,
       strokeWeight,
       strokeOpacity: 0.9,
+      clickable,
     });
-  }, [center, radius, fillColor, strokeColor, fillOpacity, strokeWeight]);
+  }, [center, radius, fillColor, strokeColor, fillOpacity, strokeWeight, clickable]);
 
   // (Re)bind click handler when it changes.
   useEffect(() => {
@@ -183,6 +187,50 @@ function CircleMarker({
   }, [onClick]);
 
   return null;
+}
+
+/**
+ * The user's current location, drawn in the Google Maps "blue dot" style:
+ * a translucent accuracy halo (`CircleMarker`) plus a crisp centered dot
+ * with a white ring and an animated "ping" pulse.
+ */
+function UserLocationMarker({
+  position,
+  accuracy,
+  onClose,
+}: {
+  position: google.maps.LatLngLiteral;
+  accuracy: number;
+  onClose?: () => void;
+}) {
+  return (
+    <>
+      {accuracy > 0 && (
+        <CircleMarker
+          center={position}
+          radius={accuracy}
+          fillColor="#1a73e8"
+          strokeColor="#1a73e8"
+          fillOpacity={0.12}
+          strokeWeight={0}
+          clickable={false}
+        />
+      )}
+      <AdvancedMarker position={position}>
+        <div className="map-user-location">
+          {onClose && (
+            <button
+              className="map-user-location-close"
+              title="Clear"
+              onClick={(e) => { e.stopPropagation(); onClose(); }}
+            >×</button>
+          )}
+          <span className="map-user-location-dot" />
+          <span className="map-user-location-ping" />
+        </div>
+      </AdvancedMarker>
+    </>
+  );
 }
 
 function SelectionRectangle({ bounds }: { bounds: google.maps.LatLngBoundsLiteral | null }) {
@@ -377,7 +425,7 @@ export default function MapPicker({
     : center ?? BENT_NM;
   const initialZoom = zoom ?? DEFAULT_ZOOM;
 
-  const [geoMarker, setGeoMarker] = useState<google.maps.LatLngLiteral | null>(null);
+  const [geoMarker, setGeoMarker] = useState<{ position: google.maps.LatLngLiteral; accuracy: number } | null>(null);
 
   const [marker, setMarker] = useState<google.maps.LatLngLiteral | null>(
     hasExisting ? { lat: parseFloat(lat), lng: parseFloat(lng) } : null
@@ -445,7 +493,7 @@ export default function MapPicker({
           onClick={handleMapClick}
         >
           <MapFocuser target={focusTarget ?? null} />
-          <LocateButton onLocate={(pos) => setGeoMarker(pos)} />
+          <LocateButton onLocate={(pos, accuracy) => setGeoMarker({ position: pos, accuracy })} />
           {onToggleSelectionMode && (
             <SelectAreaButton active={selectionMode} onToggle={onToggleSelectionMode} />
           )}
@@ -462,19 +510,11 @@ export default function MapPicker({
           <SelectionRectangle bounds={selectionBounds} />
 
           {geoMarker && (
-            <AdvancedMarker position={geoMarker}>
-              <div className="map-balloon">
-                <button
-                  className="map-balloon-cancel"
-                  title="Cancel"
-                  onClick={(e) => { e.stopPropagation(); setGeoMarker(null); }}
-                >×</button>
-                <svg width="32" height="42" viewBox="0 0 32 42" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M16 0C7.163 0 0 7.163 0 16c0 10 16 26 16 26S32 26 32 16C32 7.163 24.837 0 16 0z" fill="#e11d48"/>
-                  <circle cx="16" cy="16" r="6" fill="#fff"/>
-                </svg>
-              </div>
-            </AdvancedMarker>
+            <UserLocationMarker
+              position={geoMarker.position}
+              accuracy={geoMarker.accuracy}
+              onClose={() => setGeoMarker(null)}
+            />
           )}
 
           {points.map((p) => (
